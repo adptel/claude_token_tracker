@@ -6,6 +6,7 @@ let dailyChart = null;
 let hourlyChart = null;
 let modelPieChart = null;
 let currentSection = 'overview';
+let activeDateRange = 7; // days; 0 = all time
 
 // ===== Formatting helpers =====
 function fmt$(n) {
@@ -82,17 +83,18 @@ function chartTooltipConfig() {
 // ===== Render functions =====
 function renderSummaryCards(summary) {
   document.getElementById('total-cost').textContent = fmt$(summary.totalCost);
-  document.getElementById('total-input').textContent = fmtTokens(summary.totalInputTokens);
-  document.getElementById('total-output').textContent = fmtTokens(summary.totalOutputTokens);
+  document.getElementById('total-all-tokens').textContent = fmtTokens(summary.totalAllTokens);
+  document.getElementById('cache-hit-rate').textContent = `${summary.cacheHitRate}%`;
   document.getElementById('cache-savings').textContent = fmt$(summary.totalCacheReadSavings);
+
   document.getElementById('total-messages-sub').textContent =
     `${summary.totalMessages.toLocaleString()} messages`;
-  document.getElementById('total-sessions-sub').textContent =
-    `${summary.totalSessions.toLocaleString()} sessions`;
-  document.getElementById('total-projects-sub').textContent =
-    `${summary.totalProjects.toLocaleString()} projects`;
+  document.getElementById('total-token-breakdown').textContent =
+    `${fmtTokens(summary.totalInputTokens)} input · ${fmtTokens(summary.totalCacheWrite)} cache w · ${fmtTokens(summary.totalOutputTokens)} output`;
   document.getElementById('cache-read-sub').textContent =
-    `${fmtTokens(summary.totalCacheRead)} cache tokens`;
+    `${fmtTokens(summary.totalCacheRead)} tokens from cache`;
+  document.getElementById('total-sessions-sub').textContent =
+    `${summary.totalSessions} sessions · ${summary.totalProjects} projects`;
 }
 
 function renderDailyChart(dailySeries) {
@@ -394,18 +396,45 @@ function renderInsights(insights) {
   `).join('');
 }
 
+// ===== Date range helpers =====
+function getDateRange(days) {
+  if (days === 0) return { start: null, end: null };
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - (days - 1));
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  return { start: fmt(start), end: fmt(end) };
+}
+
+function updateDateLabel(days) {
+  const label = document.getElementById('date-range-label');
+  if (days === 0) {
+    label.textContent = 'All time';
+    return;
+  }
+  const { start, end } = getDateRange(days);
+  const fmt = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  label.textContent = `${fmt(start)} – ${fmt(end)}`;
+}
+
 // ===== Data loading =====
 async function loadData() {
   const refreshBtn = document.getElementById('refresh-btn');
   refreshBtn.classList.add('spinning');
 
   try {
-    const res = await fetch('/api/analytics');
+    const { start, end } = getDateRange(activeDateRange);
+    const params = new URLSearchParams();
+    if (start) params.set('start', start);
+    if (end) params.set('end', end);
+
+    const res = await fetch('/api/analytics?' + params.toString());
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Unknown error');
     analyticsData = json.data;
     renderAll(analyticsData);
+    updateDateLabel(activeDateRange);
     document.getElementById('last-updated').textContent =
       `Updated ${new Date().toLocaleTimeString()}`;
   } catch (err) {
@@ -464,6 +493,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Refresh button
   document.getElementById('refresh-btn').addEventListener('click', loadData);
+
+  // Date range buttons
+  document.querySelectorAll('.date-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeDateRange = parseInt(btn.dataset.range, 10);
+      loadData();
+    });
+  });
 
   // Load data and show app
   await loadData();

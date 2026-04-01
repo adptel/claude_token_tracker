@@ -11,20 +11,21 @@ async function createServer(options = {}) {
   const port = options.port || DEFAULT_PORT;
   const dataDir = options.dataDir || CLAUDE_DIR;
 
-  // Serve the static dashboard
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
-  // Analytics data API endpoint
+  // Analytics data API — supports ?start=YYYY-MM-DD&end=YYYY-MM-DD query params
   app.get('/api/analytics', async (req, res) => {
     try {
-      const data = await buildAnalytics(dataDir);
+      const opts = {};
+      if (req.query.start) opts.startDate = req.query.start;
+      if (req.query.end) opts.endDate = req.query.end;
+      const data = await buildAnalytics(dataDir, opts);
       res.json({ ok: true, data });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message });
     }
   });
 
-  // Health check
   app.get('/api/health', (req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
