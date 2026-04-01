@@ -96,6 +96,17 @@
           <p class="section-desc">Your Claude Code token usage at a glance</p>
         </div>
 
+        <!-- Date range filter -->
+        <div class="date-filter-row" id="date-filter-row">
+          <div class="date-filter-group">
+            <button class="date-btn active" data-range="7">Last 7 days</button>
+            <button class="date-btn" data-range="30">Last 30 days</button>
+            <button class="date-btn" data-range="90">Last 90 days</button>
+            <button class="date-btn" data-range="0">All time</button>
+          </div>
+          <span class="date-range-label" id="date-range-label"></span>
+        </div>
+
         <!-- Summary cards -->
         <div class="stats-grid" id="stats-grid">
           <div class="stat-card accent">
@@ -104,19 +115,19 @@
             <div class="stat-sub" id="total-messages-sub">0 messages</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Input Tokens</div>
-            <div class="stat-value" id="total-input">0</div>
-            <div class="stat-sub" id="total-sessions-sub">0 sessions</div>
+            <div class="stat-label">Total Usage</div>
+            <div class="stat-value" id="total-all-tokens">0</div>
+            <div class="stat-sub" id="total-token-breakdown">0 input · 0 output</div>
           </div>
-          <div class="stat-card">
-            <div class="stat-label">Output Tokens</div>
-            <div class="stat-value" id="total-output">0</div>
-            <div class="stat-sub" id="total-projects-sub">0 projects</div>
+          <div class="stat-card blue">
+            <div class="stat-label">Cache Hit Rate</div>
+            <div class="stat-value" id="cache-hit-rate">0%</div>
+            <div class="stat-sub" id="cache-read-sub">0 tokens from cache</div>
           </div>
           <div class="stat-card green">
             <div class="stat-label">Cache Savings</div>
             <div class="stat-value" id="cache-savings">$0.00</div>
-            <div class="stat-sub" id="cache-read-sub">0 cache hits</div>
+            <div class="stat-sub" id="total-sessions-sub">0 sessions · 0 projects</div>
           </div>
         </div>
 
