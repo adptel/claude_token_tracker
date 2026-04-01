@@ -18,13 +18,9 @@ function parseJsonlFile(filePath) {
   const lines = fs.readFileSync(filePath, 'utf8').split('\n');
   const entries = [];
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      entries.push(JSON.parse(trimmed));
-    } catch {
-      // skip malformed lines
-    }
+    const t = line.trim();
+    if (!t) continue;
+    try { entries.push(JSON.parse(t)); } catch { /* skip */ }
   }
   return entries;
 }
@@ -33,37 +29,50 @@ function extractProjectName(filePath, baseDir) {
   const rel = path.relative(baseDir, filePath);
   const parts = rel.split(path.sep);
   if (parts.length >= 2) {
-    return parts[0]
-      .replace(/^-/, '')
-      .replace(/-/g, '/')
-      .replace(/^\//, '')
-      || 'Unknown Project';
+    return parts[0].replace(/^-/, '').replace(/-/g, '/').replace(/^\//, '') || 'Unknown Project';
   }
   return 'Unknown Project';
 }
 
+/** Extract plain text from a message content field */
+function extractText(content) {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter(c => c.type === 'text' && c.text)
+      .map(c => c.text)
+      .join(' ');
+  }
+  return '';
+}
+
+/** Returns true if this user message is a real human prompt (not a tool result) */
+function isUserTextMessage(entry) {
+  if (entry.type !== 'user' || !entry.message) return false;
+  const content = entry.message.content;
+  if (typeof content === 'string') return content.trim().length > 0;
+  if (Array.isArray(content)) {
+    return content.some(c => c.type === 'text' && c.text && c.text.trim().length > 0);
+  }
+  return false;
+}
+
 /**
- * Core aggregation.
- *
- * Key correctness fix: Claude Code can write the same message UUID into multiple
- * JSONL files (when a session is continued / forked). We collect every assistant
- * entry across ALL files first, dedup by UUID (keeping the last-seen entry for
- * each UUID, which has the most complete usage), then aggregate.
- *
- * @param {string} baseDir - path to ~/.claude/projects
- * @param {{ startDate?: string, endDate?: string }} opts - optional date filter (YYYY-MM-DD)
+ * Build full analytics dataset.
+ * Key fix: two-pass global UUID deduplication — keeps the entry with the
+ * highest output_tokens for each UUID (the final, complete streaming entry).
  */
 async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   const files = await findSessionFiles(baseDir);
 
-  // ── Pass 1: collect every assistant+usage entry, indexed by UUID ──────────
-  // Map: uuid -> { entry, sessionId, projectName, filePath }
-  const byUuid = new Map();
+  // ── Pass 1: collect every assistant+usage entry, deduplicated by UUID ──────
+  // For each UUID keep the entry with the most output_tokens (= most complete).
+  const byUuid = new Map();  // uuid -> { entry, sessionId, projectName, filePath }
+  const userByUuid = new Map();   // uuid -> user entry (for prompt lookup)
+  // Track first text prompt per session
+  const sessionFirstPrompt = new Map(); // sessionId -> string
 
-  // Also collect user messages for prompt lookup
-  const userByUuid = new Map();
-
-  // Track which file each UUID was last seen in
   for (const filePath of files) {
     const entries = parseJsonlFile(filePath);
     const sessionId = path.basename(filePath, '.jsonl');
@@ -72,246 +81,323 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     for (const entry of entries) {
       if (!entry.uuid) continue;
 
-      if (entry.type === 'user' && entry.message) {
-        // Keep latest version of user message
+      if (isUserTextMessage(entry)) {
         userByUuid.set(entry.uuid, entry);
+        // Track the first real user prompt per session
+        if (!sessionFirstPrompt.has(sessionId)) {
+          const text = extractText(entry.message.content).slice(0, 120).replace(/\s+/g, ' ').trim();
+          if (text) sessionFirstPrompt.set(sessionId, text);
+        }
       }
 
       if (entry.type === 'assistant' && entry.message?.usage) {
-        // Overwrite with latest occurrence — this ensures we use the final,
-        // complete usage record (streaming may produce earlier partial entries
-        // with the same UUID and 0 output_tokens).
-        byUuid.set(entry.uuid, { entry, sessionId, projectName, filePath });
+        const existing = byUuid.get(entry.uuid);
+        const newOut = entry.message.usage.output_tokens || 0;
+        const oldOut = existing ? (existing.entry.message.usage.output_tokens || 0) : -1;
+        // Keep the entry with the highest output_tokens (most complete)
+        if (newOut >= oldOut) {
+          byUuid.set(entry.uuid, { entry, sessionId, projectName, filePath });
+        }
       }
     }
   }
 
-  // ── Pass 2: aggregate deduplicated entries ─────────────────────────────────
+  // ── Pass 2: aggregate ──────────────────────────────────────────────────────
   const { startDate, endDate } = opts;
-
-  // Per-session accumulators (key = sessionId)
   const sessionMap = new Map();
-
   const dailyMap = {};
   const modelMap = {};
   const hourlyMap = {};
-  const costlyMessages = [];
+  const allMessages = [];  // every message for costly queries / model queries
 
-  let totalCost = 0;
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
-  let totalCacheWrite = 0;
-  let totalCacheRead = 0;
-  let totalCacheReadSavings = 0;
-  let totalMessages = 0;
+  let totalCost = 0, totalInputTokens = 0, totalOutputTokens = 0;
+  let totalCacheWrite = 0, totalCacheRead = 0, totalCacheReadSavings = 0, totalMessages = 0;
 
   for (const { entry, sessionId, projectName, filePath } of byUuid.values()) {
     const { usage, model } = entry.message;
     const timestamp = entry.timestamp;
     if (!timestamp) continue;
 
-    // Date range filter
     const date = timestamp.slice(0, 10);
     if (startDate && date < startDate) continue;
     if (endDate && date > endDate) continue;
 
     const costs = calculateCost(usage, model);
     const hour = new Date(timestamp).getUTCHours();
+    const inp = usage.input_tokens || 0;
+    const out = usage.output_tokens || 0;
+    const cw = usage.cache_creation_input_tokens || 0;
+    const cr = usage.cache_read_input_tokens || 0;
+    const total = inp + cw + cr + out;
 
-    // Totals
     totalCost += costs.total;
-    totalInputTokens += usage.input_tokens || 0;
-    totalOutputTokens += usage.output_tokens || 0;
-    totalCacheWrite += usage.cache_creation_input_tokens || 0;
-    totalCacheRead += usage.cache_read_input_tokens || 0;
+    totalInputTokens += inp;
+    totalOutputTokens += out;
+    totalCacheWrite += cw;
+    totalCacheRead += cr;
     totalCacheReadSavings += costs.cacheReadSavings;
     totalMessages++;
 
-    // Per-session
+    // Session
     if (!sessionMap.has(sessionId)) {
       sessionMap.set(sessionId, {
-        sessionId,
-        projectName,
-        filePath,
-        cost: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheWrite: 0,
-        cacheRead: 0,
-        messages: 0,
-        firstTimestamp: null,
-        lastTimestamp: null,
+        sessionId, projectName, filePath,
+        cost: 0, inputTokens: 0, outputTokens: 0,
+        cacheWrite: 0, cacheRead: 0, totalTokens: 0,
+        messages: 0, firstTimestamp: null, lastTimestamp: null,
+        models: new Set(),
+        firstPrompt: sessionFirstPrompt.get(sessionId) || '',
       });
     }
     const sess = sessionMap.get(sessionId);
     sess.cost += costs.total;
-    sess.inputTokens += usage.input_tokens || 0;
-    sess.outputTokens += usage.output_tokens || 0;
-    sess.cacheWrite += usage.cache_creation_input_tokens || 0;
-    sess.cacheRead += usage.cache_read_input_tokens || 0;
+    sess.inputTokens += inp;
+    sess.outputTokens += out;
+    sess.cacheWrite += cw;
+    sess.cacheRead += cr;
+    sess.totalTokens += total;
     sess.messages++;
+    if (model) sess.models.add(model);
     if (!sess.firstTimestamp || timestamp < sess.firstTimestamp) sess.firstTimestamp = timestamp;
     if (!sess.lastTimestamp || timestamp > sess.lastTimestamp) sess.lastTimestamp = timestamp;
 
     // Daily
-    if (!dailyMap[date]) {
-      dailyMap[date] = { cost: 0, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, messages: 0, totalTokens: 0 };
-    }
+    if (!dailyMap[date]) dailyMap[date] = { cost: 0, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, messages: 0, totalTokens: 0 };
     dailyMap[date].cost += costs.total;
-    dailyMap[date].inputTokens += usage.input_tokens || 0;
-    dailyMap[date].outputTokens += usage.output_tokens || 0;
-    dailyMap[date].cacheRead += usage.cache_read_input_tokens || 0;
-    dailyMap[date].cacheWrite += usage.cache_creation_input_tokens || 0;
+    dailyMap[date].inputTokens += inp;
+    dailyMap[date].outputTokens += out;
+    dailyMap[date].cacheRead += cr;
+    dailyMap[date].cacheWrite += cw;
     dailyMap[date].messages++;
-    dailyMap[date].totalTokens +=
-      (usage.input_tokens || 0) +
-      (usage.cache_creation_input_tokens || 0) +
-      (usage.cache_read_input_tokens || 0) +
-      (usage.output_tokens || 0);
+    dailyMap[date].totalTokens += total;
 
     // Model
     const modelKey = model || 'unknown';
-    if (!modelMap[modelKey]) {
-      modelMap[modelKey] = { cost: 0, inputTokens: 0, outputTokens: 0, cacheWrite: 0, cacheRead: 0, messages: 0 };
-    }
+    if (!modelMap[modelKey]) modelMap[modelKey] = { cost: 0, inputTokens: 0, outputTokens: 0, cacheWrite: 0, cacheRead: 0, messages: 0, totalTokens: 0 };
     modelMap[modelKey].cost += costs.total;
-    modelMap[modelKey].inputTokens += usage.input_tokens || 0;
-    modelMap[modelKey].outputTokens += usage.output_tokens || 0;
-    modelMap[modelKey].cacheWrite += usage.cache_creation_input_tokens || 0;
-    modelMap[modelKey].cacheRead += usage.cache_read_input_tokens || 0;
+    modelMap[modelKey].inputTokens += inp;
+    modelMap[modelKey].outputTokens += out;
+    modelMap[modelKey].cacheWrite += cw;
+    modelMap[modelKey].cacheRead += cr;
     modelMap[modelKey].messages++;
+    modelMap[modelKey].totalTokens += total;
 
     // Hourly
     if (!hourlyMap[hour]) hourlyMap[hour] = { cost: 0, messages: 0 };
     hourlyMap[hour].cost += costs.total;
     hourlyMap[hour].messages++;
 
-    // Costly messages — resolve user prompt
+    // Resolve user prompt for this assistant entry
     const parentUserEntry = userByUuid.get(entry.parentUuid) || userByUuid.get(entry.uuid);
     let promptSnippet = '';
     if (parentUserEntry?.message?.content) {
-      const content = parentUserEntry.message.content;
-      const text = typeof content === 'string'
-        ? content
-        : Array.isArray(content)
-          ? content.filter(c => c.type === 'text').map(c => c.text).join(' ')
-          : '';
-      promptSnippet = text.slice(0, 200).replace(/\s+/g, ' ').trim();
+      promptSnippet = extractText(parentUserEntry.message.content)
+        .slice(0, 200).replace(/\s+/g, ' ').trim();
     }
 
-    if (costs.total > 0 || (usage.output_tokens || 0) > 0) {
-      costlyMessages.push({
-        sessionId,
-        projectName,
-        timestamp,
-        model: modelKey,
-        cost: costs.total,
-        inputTokens: usage.input_tokens || 0,
-        outputTokens: usage.output_tokens || 0,
-        cacheWrite: usage.cache_creation_input_tokens || 0,
-        cacheRead: usage.cache_read_input_tokens || 0,
-        totalTokens:
-          (usage.input_tokens || 0) +
-          (usage.cache_creation_input_tokens || 0) +
-          (usage.cache_read_input_tokens || 0) +
-          (usage.output_tokens || 0),
-        prompt: promptSnippet,
-      });
-    }
+    allMessages.push({
+      sessionId, projectName, timestamp, model: modelKey,
+      cost: costs.total, inputTokens: inp, outputTokens: out,
+      cacheWrite: cw, cacheRead: cr, totalTokens: total,
+      prompt: promptSnippet,
+    });
   }
 
-  // Sort sessions by cost
-  const sessions = Array.from(sessionMap.values()).sort((a, b) => b.cost - a.cost);
+  // Serialize sessions
+  const sessions = Array.from(sessionMap.values()).map(s => ({
+    ...s,
+    models: Array.from(s.models),
+  })).sort((a, b) => b.cost - a.cost);
 
-  // Total tokens (all types) — matches Claude Spend's "TOTAL USAGE" metric
   const totalAllTokens = totalInputTokens + totalCacheWrite + totalCacheRead + totalOutputTokens;
+  const cacheHitRate = totalAllTokens > 0 ? Math.round((totalCacheRead / totalAllTokens) * 100) : 0;
 
-  // Cache hit rate: % of tokens served from cache
-  const cacheHitRate = totalAllTokens > 0
-    ? Math.round((totalCacheRead / totalAllTokens) * 100)
-    : 0;
-
-  costlyMessages.sort((a, b) => b.cost - a.cost);
+  // Top 20 by total tokens for Costly Queries
+  const topMessagesByTokens = [...allMessages]
+    .sort((a, b) => b.totalTokens - a.totalTokens)
+    .slice(0, 20);
 
   const dailySeries = Object.entries(dailyMap)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, data]) => ({ date, ...data }));
+    .map(([date, d]) => ({ date, ...d }));
 
   const modelBreakdown = Object.entries(modelMap)
     .sort(([, a], [, b]) => b.cost - a.cost)
-    .map(([model, data]) => ({ model, ...data }));
+    .map(([model, d]) => ({ model, ...d }));
+
+  // Model queries: top 15 messages per model
+  const modelQueries = {};
+  for (const { model } of modelBreakdown) {
+    modelQueries[model] = allMessages
+      .filter(m => m.model === model)
+      .sort((a, b) => b.totalTokens - a.totalTokens)
+      .slice(0, 15);
+  }
 
   const hourlySeries = Array.from({ length: 24 }, (_, h) => ({
-    hour: h,
-    ...(hourlyMap[h] || { cost: 0, messages: 0 }),
+    hour: h, ...(hourlyMap[h] || { cost: 0, messages: 0 }),
   }));
 
   const insights = generateInsights({
-    sessions,
-    dailySeries,
-    topMessages: costlyMessages.slice(0, 25),
-    totalCost,
-    totalMessages,
-    totalCacheRead,
-    totalCacheReadSavings,
-    cacheHitRate,
-    totalAllTokens,
-    totalOutputTokens,
+    sessions, dailySeries,
+    topMessages: topMessagesByTokens,
+    totalCost, totalMessages, totalCacheRead,
+    totalCacheReadSavings, cacheHitRate,
+    totalAllTokens, totalOutputTokens,
   });
 
   return {
     summary: {
-      totalCost,
-      totalInputTokens,
-      totalOutputTokens,
-      totalCacheWrite,
-      totalCacheRead,
-      totalCacheReadSavings,
-      totalAllTokens,
-      cacheHitRate,
-      totalMessages,
-      totalSessions: sessions.length,
+      totalCost, totalInputTokens, totalOutputTokens,
+      totalCacheWrite, totalCacheRead, totalCacheReadSavings,
+      totalAllTokens, cacheHitRate,
+      totalMessages, totalSessions: sessions.length,
       totalProjects: new Set(sessions.map(s => s.projectName)).size,
     },
     sessions: sessions.slice(0, 50),
     dailySeries,
     modelBreakdown,
+    modelQueries,
     hourlySeries,
-    topMessages: costlyMessages.slice(0, 25),
+    topMessages: topMessagesByTokens,
     insights,
   };
 }
 
+/**
+ * Returns all turns for a specific session file.
+ * A "turn" = one real user text message + all assistant API calls that follow it
+ * (before the next user text message).
+ */
+function getSessionDetail(filePath) {
+  if (!fs.existsSync(filePath)) return { turns: [], summary: null };
+  const entries = parseJsonlFile(filePath).sort((a, b) => {
+    if (!a.timestamp) return -1;
+    if (!b.timestamp) return 1;
+    return a.timestamp.localeCompare(b.timestamp);
+  });
+
+  // Build UUID lookup
+  const byUuid = new Map();
+  for (const e of entries) {
+    if (e.uuid) {
+      // Keep highest-output version
+      const ex = byUuid.get(e.uuid);
+      const newOut = e.message?.usage?.output_tokens || 0;
+      const oldOut = ex?.message?.usage?.output_tokens || -1;
+      if (newOut >= oldOut) byUuid.set(e.uuid, e);
+    }
+  }
+
+  const turns = [];
+  let currentTurn = null;
+
+  for (const entry of entries) {
+    if (isUserTextMessage(entry)) {
+      if (currentTurn) turns.push(currentTurn);
+      currentTurn = {
+        turnNumber: turns.length + 1,
+        userPrompt: extractText(entry.message.content).slice(0, 400).replace(/\s+/g, ' ').trim(),
+        timestamp: entry.timestamp,
+        model: null,
+        inputTokens: 0, outputTokens: 0,
+        cacheWrite: 0, cacheRead: 0, totalTokens: 0,
+        cost: 0,
+        apiCalls: 0,
+      };
+    } else if (entry.type === 'assistant' && entry.message?.usage && currentTurn) {
+      // Only count deduplicated entries
+      const deduped = byUuid.get(entry.uuid);
+      if (deduped !== entry) continue;
+
+      const u = entry.message.usage;
+      const inp = u.input_tokens || 0;
+      const out = u.output_tokens || 0;
+      const cw = u.cache_creation_input_tokens || 0;
+      const cr = u.cache_read_input_tokens || 0;
+      const costs = calculateCost(u, entry.message.model);
+
+      currentTurn.inputTokens += inp;
+      currentTurn.outputTokens += out;
+      currentTurn.cacheWrite += cw;
+      currentTurn.cacheRead += cr;
+      currentTurn.totalTokens += inp + cw + cr + out;
+      currentTurn.cost += costs.total;
+      currentTurn.apiCalls++;
+      if (entry.message.model) currentTurn.model = entry.message.model;
+    }
+  }
+  if (currentTurn) turns.push(currentTurn);
+
+  const totalCost = turns.reduce((s, t) => s + t.cost, 0);
+  const totalTokens = turns.reduce((s, t) => s + t.totalTokens, 0);
+  const totalCacheRead = turns.reduce((s, t) => s + t.cacheRead, 0);
+  const cacheHitRate = totalTokens > 0 ? Math.round((totalCacheRead / totalTokens) * 100) : 0;
+  const avgCostPerTurn = turns.length > 0 ? totalCost / turns.length : 0;
+
+  // Efficiency judgement
+  let efficient = false;
+  let efficiencyNote = '';
+  if (turns.length > 0) {
+    if (cacheHitRate >= 70) {
+      efficient = true;
+      efficiencyNote = `${turns.length} turns, avg ${fmt$(avgCostPerTurn)}/turn, total ${fmt$(totalCost)}. Cache hit rate: ${cacheHitRate}%. Cache is working well.`;
+    } else {
+      efficiencyNote = `${turns.length} turns, avg ${fmt$(avgCostPerTurn)}/turn, total ${fmt$(totalCost)}. Cache hit rate: ${cacheHitRate}%. Consider using /clear between unrelated tasks.`;
+    }
+  }
+
+  return {
+    turns,
+    summary: {
+      totalTurns: turns.length,
+      totalCost,
+      totalTokens,
+      cacheHitRate,
+      efficient,
+      efficiencyNote,
+    },
+  };
+}
+
+function fmt$(n) {
+  if (!n || n < 0.0001) return '$0.00';
+  if (n < 0.01) return `$${n.toFixed(5)}`;
+  if (n < 1) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
+}
+
 function generateInsights({ sessions, dailySeries, topMessages, totalCost, totalMessages,
   totalCacheRead, totalCacheReadSavings, cacheHitRate, totalAllTokens, totalOutputTokens }) {
+
   const tips = [];
 
-  // Output token ratio
   if (totalAllTokens > 0) {
     const outputPct = ((totalOutputTokens / totalAllTokens) * 100).toFixed(1);
     tips.push({
       icon: '💬',
       title: `${outputPct}% of tokens are Claude actually writing`,
-      detail: `The vast majority of your tokens go to input context (what Claude reads), not output (what it writes). Shorter, focused sessions dramatically reduce input costs.`,
+      summary: `Only ${outputPct}% of all tokens are Claude's output. The rest is context Claude reads.`,
+      detail: `Every message you send causes Claude to re-read the entire conversation from scratch. In a 3-message conversation, the 3rd message processes ~3× more tokens than the 1st. Use /clear when switching tasks to avoid paying to re-read irrelevant history.`,
     });
   }
 
-  // Cache hit rate
   if (cacheHitRate >= 80) {
     tips.push({
       icon: '💾',
       title: `${cacheHitRate}% cache hit rate — excellent!`,
-      detail: `${cacheHitRate}% of your context is served from cache at a fraction of full input price. This is saving you $${totalCacheReadSavings.toFixed(2)}. Keep sessions focused to maintain this.`,
+      summary: `${cacheHitRate}% of your tokens were served from cache, saving you ${fmt$(totalCacheReadSavings)}.`,
+      detail: `Prompt caching charges only 10% of the normal input rate for repeated context. Your ${cacheHitRate}% cache hit rate means you're efficiently reusing context. Cache writes cost 1.25× input but only happen once per unique context block.`,
     });
   } else if (totalCacheReadSavings > 0.01) {
     tips.push({
       icon: '💾',
       title: 'Prompt caching is saving you money',
-      detail: `You've saved $${totalCacheReadSavings.toFixed(2)} through cache hits. Claude caches repeated context automatically — longer continuous sessions benefit most.`,
+      summary: `You've saved ${fmt$(totalCacheReadSavings)} through cache hits (${cacheHitRate}% rate).`,
+      detail: `Cache reads cost 10× less than normal input. Your cache hit rate is ${cacheHitRate}% — there's room to improve by keeping sessions focused on one topic so more context gets reused.`,
     });
   }
 
-  // Long sessions dominate spend
   const top3Cost = sessions.slice(0, 3).reduce((s, x) => s + x.cost, 0);
   if (sessions.length >= 3 && totalCost > 0) {
     const pct = Math.round((top3Cost / totalCost) * 100);
@@ -319,41 +405,42 @@ function generateInsights({ sessions, dailySeries, topMessages, totalCost, total
       tips.push({
         icon: '🔥',
         title: 'The longer you chat, the more each message costs',
-        detail: `Your 3 costliest sessions account for ${pct}% of total spend. Conversations accumulate context over time — each follow-up message pays to re-read everything. Use /clear to reset.`,
+        summary: `Your 3 costliest sessions account for ${pct}% of total spend.`,
+        detail: `Long conversations compound: each new message re-reads every previous exchange. A 100-message session can cost 50× more per message than a fresh 2-message session for the same question. Use /clear to start fresh when switching tasks.`,
       });
     }
   }
 
-  // Short/vague prompts
   if (topMessages.length > 0) {
-    const vague = topMessages.filter(m => m.prompt && m.prompt.length < 20 && m.cost > 0.001);
+    const vague = topMessages.filter(m => m.prompt && m.prompt.length < 25 && m.totalTokens > 5000);
     if (vague.length > 0) {
       tips.push({
         icon: '⚡',
         title: 'Short, vague messages are costing you the most',
-        detail: 'Follow-ups like "yes", "do it", or "continue" force Claude to re-read all prior context to understand what you mean. Starting a new focused session is often cheaper.',
+        summary: `${vague.length} of your top queries are short follow-ups with large context.`,
+        detail: `Messages like "yes", "do it", or "continue" carry the full conversation context but give Claude very little new guidance. Starting a new session with a complete, specific prompt is often cheaper and produces better results.`,
       });
     }
   }
 
-  // Busiest day
   if (dailySeries.length > 0) {
     const busiest = [...dailySeries].sort((a, b) => b.cost - a.cost)[0];
     tips.push({
       icon: '📅',
       title: `Peak day: ${busiest.date}`,
-      detail: `You spent $${busiest.cost.toFixed(2)} in a single day with ${busiest.messages} API calls. Pacing heavy work across multiple days helps avoid hitting usage limits.`,
+      summary: `${fmt$(busiest.cost)} spent on ${busiest.date} across ${busiest.messages} API calls.`,
+      detail: `Heavy usage days suggest marathon coding sessions. These are expensive because each tool call adds to an ever-growing context. Consider breaking large tasks into separate Claude Code sessions rather than one continuous conversation.`,
     });
   }
 
-  // Model choice
   tips.push({
     icon: '🧠',
     title: 'Model choice significantly impacts cost',
-    detail: 'Opus costs 5× more than Sonnet and 18× more than Haiku per token. Use Haiku or Sonnet for routine tasks; reserve Opus for complex reasoning that truly benefits from it.',
+    summary: 'Opus costs 5× more than Sonnet and 18× more than Haiku per token.',
+    detail: `Pricing per 1M tokens: Opus $15 input/$75 output, Sonnet $3/$15, Haiku $0.80/$4. For routine tasks like file editing, code completion, and simple Q&A, Haiku or Sonnet deliver excellent results at a fraction of the cost. Reserve Opus for complex multi-step reasoning.`,
   });
 
   return tips;
 }
 
-module.exports = { buildAnalytics, findSessionFiles, CLAUDE_DIR };
+module.exports = { buildAnalytics, getSessionDetail, findSessionFiles, CLAUDE_DIR };

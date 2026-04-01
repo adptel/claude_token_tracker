@@ -11,233 +11,283 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Loading screen -->
-  <div id="loading-screen">
-    <div class="loading-content">
-      <div class="loading-logo">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-          <circle cx="24" cy="24" r="22" stroke="#d97706" stroke-width="2.5" fill="none" opacity="0.3"/>
-          <circle cx="24" cy="24" r="22" stroke="#d97706" stroke-width="2.5" fill="none"
-            stroke-dasharray="138.2" stroke-dashoffset="138.2" class="spin-ring"/>
-        </svg>
-      </div>
-      <p class="loading-text">Analyzing your Claude usage…</p>
+
+<!-- Loading screen -->
+<div id="loading-screen">
+  <div class="loading-content">
+    <div class="loading-logo">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+        <circle cx="24" cy="24" r="22" stroke="#d97706" stroke-width="2.5" fill="none" opacity="0.3"/>
+        <circle cx="24" cy="24" r="22" stroke="#d97706" stroke-width="2.5" fill="none"
+          stroke-dasharray="138.2" stroke-dashoffset="138.2" class="spin-ring"/>
+      </svg>
     </div>
+    <p class="loading-text">Analyzing your Claude usage…</p>
   </div>
+</div>
 
-  <!-- Main app -->
-  <div id="app" style="display:none">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sidebar-logo">
-        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-          <rect width="28" height="28" rx="8" fill="#d97706"/>
-          <path d="M7 14 C7 9 10 7 14 7 C18 7 21 9 21 14 C21 19 18 21 14 21 C10 21 7 19 7 14Z" stroke="white" stroke-width="1.5" fill="none"/>
-          <circle cx="14" cy="14" r="3" fill="white"/>
-        </svg>
-        <span class="sidebar-title">Token Tracker</span>
+<!-- Session detail modal -->
+<div id="session-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="modal-title">Session Detail</div>
+        <div class="modal-subtitle" id="modal-subtitle"></div>
+      </div>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-efficiency" id="modal-efficiency" style="display:none"></div>
+    <div class="modal-body" id="modal-turns"></div>
+  </div>
+</div>
+
+<!-- Main app -->
+<div id="app" style="display:none">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="8" fill="#d97706"/>
+        <path d="M7 14 C7 9 10 7 14 7 C18 7 21 9 21 14 C21 19 18 21 14 21 C10 21 7 19 7 14Z" stroke="white" stroke-width="1.5" fill="none"/>
+        <circle cx="14" cy="14" r="3" fill="white"/>
+      </svg>
+      <span class="sidebar-title">Token Tracker</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" data-section="overview">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/></svg>
+        Overview
+      </a>
+      <a href="#" class="nav-item" data-section="sessions">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Sessions
+      </a>
+      <a href="#" class="nav-item" data-section="messages">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13 2H3a1 1 0 00-1 1v7a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V3a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+        Costly Queries
+      </a>
+      <a href="#" class="nav-item" data-section="models">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 2v6l4 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Models
+      </a>
+      <a href="#" class="nav-item" data-section="insights">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1l1.8 4h4.2l-3.4 2.5 1.3 4L8 9l-3.9 2.5 1.3-4L2 5h4.2L8 1z" fill="currentColor"/></svg>
+        Insights
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="refresh-btn" class="refresh-btn">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 7A5 5 0 112 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 4v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Refresh
+      </button>
+      <p class="last-updated" id="last-updated">—</p>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main-content">
+
+    <!-- ===== OVERVIEW ===== -->
+    <section id="overview" class="section">
+      <div class="section-header">
+        <h1>Overview</h1>
+        <p class="section-desc">Your Claude Code token usage at a glance</p>
       </div>
 
-      <nav class="sidebar-nav">
-        <a href="#overview" class="nav-item active" data-section="overview">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/>
-            <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/>
-            <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/>
-            <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/>
-          </svg>
-          Overview
-        </a>
-        <a href="#sessions" class="nav-item" data-section="sessions">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-          Sessions
-        </a>
-        <a href="#messages" class="nav-item" data-section="messages">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M13 2H3a1 1 0 00-1 1v7a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V3a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.5" fill="none"/>
-          </svg>
-          Costly Queries
-        </a>
-        <a href="#models" class="nav-item" data-section="models">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/>
-            <path d="M8 2v6l4 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-          Models
-        </a>
-        <a href="#insights" class="nav-item" data-section="insights">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M8 1l1.8 4h4.2l-3.4 2.5 1.3 4L8 9l-3.9 2.5 1.3-4L2 5h4.2L8 1z" fill="currentColor"/>
-          </svg>
-          Insights
-        </a>
-      </nav>
-
-      <div class="sidebar-footer">
-        <button id="refresh-btn" class="refresh-btn">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M12 7A5 5 0 112 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <path d="M12 4v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          Refresh
+      <!-- How tokens work collapsible -->
+      <div class="tokens-explainer" id="tokens-explainer">
+        <button class="tokens-explainer-header" id="tokens-explainer-toggle">
+          <span class="tokens-explainer-title">HOW CLAUDE CODE TOKENS WORK</span>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <p class="last-updated" id="last-updated">—</p>
-      </div>
-    </aside>
+        <div class="tokens-explainer-body" id="tokens-explainer-body" style="display:none">
+          <p class="explainer-intro">Every time you send a message, Claude doesn't just read your latest message. It re-reads your <strong>entire conversation</strong> from the beginning. That's why tokens add up fast.</p>
 
-    <!-- Main content -->
-    <main class="main-content">
-      <!-- Overview section -->
-      <section id="overview" class="section">
-        <div class="section-header">
-          <h1>Overview</h1>
-          <p class="section-desc">Your Claude Code token usage at a glance</p>
-        </div>
-
-        <!-- Date range filter -->
-        <div class="date-filter-row" id="date-filter-row">
-          <div class="date-filter-group">
-            <button class="date-btn active" data-range="7">Last 7 days</button>
-            <button class="date-btn" data-range="30">Last 30 days</button>
-            <button class="date-btn" data-range="90">Last 90 days</button>
-            <button class="date-btn" data-range="0">All time</button>
-          </div>
-          <span class="date-range-label" id="date-range-label"></span>
-        </div>
-
-        <!-- Summary cards -->
-        <div class="stats-grid" id="stats-grid">
-          <div class="stat-card accent">
-            <div class="stat-label">Total Spend</div>
-            <div class="stat-value" id="total-cost">$0.00</div>
-            <div class="stat-sub" id="total-messages-sub">0 messages</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Total Usage</div>
-            <div class="stat-value" id="total-all-tokens">0</div>
-            <div class="stat-sub" id="total-token-breakdown">0 input · 0 output</div>
-          </div>
-          <div class="stat-card blue">
-            <div class="stat-label">Cache Hit Rate</div>
-            <div class="stat-value" id="cache-hit-rate">0%</div>
-            <div class="stat-sub" id="cache-read-sub">0 tokens from cache</div>
-          </div>
-          <div class="stat-card green">
-            <div class="stat-label">Cache Savings</div>
-            <div class="stat-value" id="cache-savings">$0.00</div>
-            <div class="stat-sub" id="total-sessions-sub">0 sessions · 0 projects</div>
-          </div>
-        </div>
-
-        <!-- Daily spend chart -->
-        <div class="chart-card">
-          <div class="chart-header">
-            <h2>Daily Spend</h2>
-            <div class="chart-legend">
-              <span class="legend-dot" style="background:#d97706"></span> Cost
-              <span class="legend-dot" style="background:#3b82f6; margin-left:12px"></span> Output tokens
+          <div class="explainer-example">
+            <div class="explainer-example-title">EXAMPLE: A 3-MESSAGE CONVERSATION</div>
+            <div class="explainer-row">
+              <div class="explainer-msg-label">Message 1</div>
+              <div class="explainer-msg-text">You send "Help me fix this bug." Claude reads your message fresh (<span class="tok-input">input</span>) and saves the conversation to cache (<span class="tok-cw">cache write</span>).</div>
+              <div class="explainer-tokens">~4K tokens</div>
             </div>
+            <div class="explainer-row">
+              <div class="explainer-msg-label">Message 2</div>
+              <div class="explainer-msg-text">You reply "Try the other file." Claude reuses message 1 from cache (<span class="tok-cr">cache read</span> — 10× cheaper) and only processes your new message fresh (<span class="tok-input">input</span>). Then saves the updated conversation (<span class="tok-cw">cache write</span>).</div>
+              <div class="explainer-tokens">~8K tokens</div>
+            </div>
+            <div class="explainer-row">
+              <div class="explainer-msg-label">Message 3</div>
+              <div class="explainer-msg-text">Claude reuses messages 1–2 from cache (<span class="tok-cr">cache read</span>) and processes your new message fresh (<span class="tok-input">input</span>). Claude's reply is <span class="tok-out">output</span>.</div>
+              <div class="explainer-tokens">~14K tokens</div>
+            </div>
+            <div class="explainer-note">Without caching, every message would be processed at full price. Cache reads save you up to 10× on repeated context.</div>
           </div>
-          <div class="chart-wrap">
-            <canvas id="daily-chart"></canvas>
-          </div>
-        </div>
 
-        <!-- Hourly activity chart -->
-        <div class="chart-card">
-          <div class="chart-header">
-            <h2>Hourly Activity (UTC)</h2>
-            <p class="chart-sub">When you use Claude the most</p>
+          <div class="explainer-legend">
+            <div class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span><strong>Input</strong> — Your message + conversation history, processed fresh. Full price.</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span><strong>Cache writes</strong> — Claude saves your conversation so it doesn't re-process everything next time. Costs 1.25× input, but only happens once.</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span><strong>Cache reads</strong> — Follow-up messages reuse the saved context. 10× cheaper than input. More cache reads = more savings.</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span><strong>Output</strong> — What Claude writes back. Most expensive per token, but usually the smallest amount.</div>
           </div>
-          <div class="chart-wrap" style="height:180px">
-            <canvas id="hourly-chart"></canvas>
-          </div>
-        </div>
-      </section>
 
-      <!-- Sessions section -->
-      <section id="sessions" class="section" style="display:none">
-        <div class="section-header">
-          <h1>Sessions</h1>
-          <p class="section-desc">All conversations ranked by cost</p>
+          <div class="explainer-tip">
+            <strong>Tip:</strong> Use <code>/clear</code> when switching tasks. It resets the conversation so Claude stops re-reading old context you no longer need.
+          </div>
         </div>
-        <div class="table-card">
-          <table class="data-table" id="sessions-table">
+      </div>
+
+      <!-- Date filter -->
+      <div class="date-filter-row">
+        <div class="date-filter-group">
+          <button class="date-btn" data-range="7">Last 7 days</button>
+          <button class="date-btn" data-range="30">Last 30 days</button>
+          <button class="date-btn" data-range="90">Last 90 days</button>
+          <button class="date-btn active" data-range="0">All time</button>
+          <button class="date-btn" data-range="custom">Custom</button>
+        </div>
+        <div class="custom-date-inputs" id="custom-date-inputs" style="display:none">
+          <input type="date" id="date-start" class="date-input" />
+          <span style="color:var(--text-dim)">–</span>
+          <input type="date" id="date-end" class="date-input" />
+          <button class="date-apply-btn" id="date-apply-btn">Apply</button>
+        </div>
+        <span class="date-range-label" id="date-range-label">All time</span>
+      </div>
+
+      <!-- Stats cards -->
+      <div class="stats-grid">
+        <div class="stat-card accent">
+          <div class="stat-label">Total Spend</div>
+          <div class="stat-value" id="total-cost">$0.00</div>
+          <div class="stat-sub" id="total-messages-sub">0 messages</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Usage</div>
+          <div class="stat-value" id="total-all-tokens">0</div>
+          <div class="stat-sub" id="total-token-breakdown">0 input · 0 output</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-label">Cache Hit Rate</div>
+          <div class="stat-value" id="cache-hit-rate">0%</div>
+          <div class="stat-sub" id="cache-read-sub">0 tokens from cache</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Cache Savings</div>
+          <div class="stat-value" id="cache-savings">$0.00</div>
+          <div class="stat-sub" id="total-sessions-sub">0 sessions · 0 projects</div>
+        </div>
+      </div>
+
+      <!-- Daily chart -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <h2>Daily Spend</h2>
+          <div class="chart-legend">
+            <span class="legend-dot" style="background:#d97706"></span> Cost
+            <span class="legend-dot" style="background:#3b82f6; margin-left:12px"></span> Output tokens
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="daily-chart"></canvas></div>
+      </div>
+
+      <!-- Hourly chart -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <h2>Hourly Activity (UTC)</h2>
+          <p class="chart-sub">When you use Claude the most</p>
+        </div>
+        <div class="chart-wrap" style="height:180px"><canvas id="hourly-chart"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ===== SESSIONS ===== -->
+    <section id="sessions" class="section" style="display:none">
+      <div class="section-header">
+        <h1>Sessions</h1>
+        <p class="section-desc">All conversations ranked by cost — click any row to see every turn</p>
+      </div>
+      <div class="search-bar-row">
+        <input type="text" id="sessions-search" class="search-input" placeholder="Search projects or prompts…" />
+        <span class="session-count-label" id="sessions-count"></span>
+      </div>
+      <div class="table-card">
+        <table class="data-table" id="sessions-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>First Prompt</th>
+              <th>Model</th>
+              <th>Messages</th>
+              <th>Total Tokens</th>
+              <th>Read (input)</th>
+              <th>Written (output)</th>
+              <th class="right">Cost</th>
+            </tr>
+          </thead>
+          <tbody id="sessions-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===== COSTLY QUERIES ===== -->
+    <section id="messages" class="section" style="display:none">
+      <div class="section-header">
+        <h1>Costly Queries</h1>
+        <p class="section-desc">Top 20 most token-intensive individual API calls, ranked by total tokens used</p>
+      </div>
+      <div class="messages-list" id="messages-list"></div>
+    </section>
+
+    <!-- ===== MODELS ===== -->
+    <section id="models" class="section" style="display:none">
+      <div class="section-header">
+        <h1>Models</h1>
+        <p class="section-desc">Usage and spend broken down by model</p>
+      </div>
+      <div class="two-col">
+        <div class="chart-card" style="flex:1">
+          <div class="chart-header"><h2>Spend by Model</h2></div>
+          <div class="chart-wrap" style="height:300px"><canvas id="model-pie-chart"></canvas></div>
+        </div>
+        <div class="chart-card" style="flex:1.5">
+          <div class="chart-header"><h2>Model Stats</h2></div>
+          <table class="data-table">
             <thead>
               <tr>
-                <th>Project</th>
-                <th>Session ID</th>
+                <th>Model</th>
                 <th>Messages</th>
-                <th>Input</th>
-                <th>Output</th>
-                <th>Cache Read</th>
+                <th>Total Tokens</th>
+                <th>Read</th>
+                <th>Written</th>
                 <th class="right">Cost</th>
-                <th>Last Active</th>
+                <th class="right">% of Total</th>
               </tr>
             </thead>
-            <tbody id="sessions-tbody"></tbody>
+            <tbody id="model-tbody"></tbody>
           </table>
         </div>
-      </section>
+      </div>
 
-      <!-- Costly messages section -->
-      <section id="messages" class="section" style="display:none">
-        <div class="section-header">
-          <h1>Costliest Queries</h1>
-          <p class="section-desc">Your top 25 most expensive individual messages</p>
-        </div>
-        <div class="messages-list" id="messages-list"></div>
-      </section>
+      <!-- Model queries -->
+      <div style="margin-top:28px">
+        <h2 style="font-size:1rem;font-weight:600;margin-bottom:16px;color:var(--text)">Queries by Model</h2>
+        <div id="model-queries-tabs" class="tab-row"></div>
+        <div id="model-queries-content" class="messages-list" style="margin-top:16px"></div>
+      </div>
+    </section>
 
-      <!-- Models section -->
-      <section id="models" class="section" style="display:none">
-        <div class="section-header">
-          <h1>Model Usage</h1>
-          <p class="section-desc">Breakdown by model</p>
-        </div>
-        <div class="two-col">
-          <div class="chart-card" style="flex:1">
-            <div class="chart-header">
-              <h2>Spend by Model</h2>
-            </div>
-            <div class="chart-wrap" style="height:300px">
-              <canvas id="model-pie-chart"></canvas>
-            </div>
-          </div>
-          <div class="chart-card" style="flex:1.5">
-            <div class="chart-header">
-              <h2>Model Stats</h2>
-            </div>
-            <table class="data-table" id="model-table">
-              <thead>
-                <tr>
-                  <th>Model</th>
-                  <th>Messages</th>
-                  <th>Input Tokens</th>
-                  <th>Output Tokens</th>
-                  <th class="right">Cost</th>
-                  <th class="right">% of Total</th>
-                </tr>
-              </thead>
-              <tbody id="model-tbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
+    <!-- ===== INSIGHTS ===== -->
+    <section id="insights" class="section" style="display:none">
+      <div class="section-header">
+        <h1>Insights</h1>
+        <p class="section-desc">Click any card to expand for detailed explanation and tips</p>
+      </div>
+      <div class="insights-list" id="insights-grid"></div>
+    </section>
 
-      <!-- Insights section -->
-      <section id="insights" class="section" style="display:none">
-        <div class="section-header">
-          <h1>Insights</h1>
-          <p class="section-desc">Tips to optimize your Claude usage and reduce spend</p>
-        </div>
-        <div class="insights-grid" id="insights-grid"></div>
-      </section>
-    </main>
-  </div>
+  </main>
+</div>
 
-  <script src="app.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
