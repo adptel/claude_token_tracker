@@ -56,6 +56,28 @@ function modelClass(m) {
   return '';
 }
 
+function clientIcon(client) {
+  if (!client) return '💻';
+  const c = client.toLowerCase();
+  if (c.includes('mobile'))   return '📱';
+  if (c.includes('vscode'))   return '🖥️';
+  if (c.includes('jetbrains')) return '🖥️';
+  if (c.includes('desktop'))  return '🖥️';
+  if (c.includes('web'))      return '🌐';
+  return '⌨️'; // Terminal CLI
+}
+
+function clientBadgeClass(client) {
+  if (!client) return 'client-cli';
+  const c = client.toLowerCase();
+  if (c.includes('mobile'))    return 'client-mobile';
+  if (c.includes('web'))       return 'client-web';
+  if (c.includes('vscode'))    return 'client-vscode';
+  if (c.includes('jetbrains')) return 'client-jetbrains';
+  if (c.includes('desktop'))   return 'client-desktop';
+  return 'client-cli';
+}
+
 function modelDotClass(m) {
   if (!m) return '';
   if (m.includes('opus')) return 'opus';
@@ -160,7 +182,7 @@ function renderSessionsTable(sessions, filter = '') {
   countLabel.textContent = `${list.length} session${list.length !== 1 ? 's' : ''}`;
 
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">📂</div><h3>No sessions found</h3><p>${filter ? 'No matches for "' + escapeHtml(filter) + '"' : 'No Claude Code sessions detected'}</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon">📂</div><h3>No sessions found</h3><p>${filter ? 'No matches for "' + escapeHtml(filter) + '"' : 'No Claude Code sessions detected'}</p></div></td></tr>`;
     return;
   }
 
@@ -179,6 +201,11 @@ function renderSessionsTable(sessions, filter = '') {
         <td>
           <div class="first-prompt-cell" title="${escapeHtml(s.firstPrompt || '')}">${escapeHtml(s.firstPrompt || '—')}</div>
           <div style="margin-top:3px"><span class="project-badge" title="${escapeHtml(s.projectName)}">${escapeHtml(s.projectName)}</span></div>
+        </td>
+        <td>
+          <span class="client-badge ${clientBadgeClass(s.client)}" title="${escapeHtml(s.client)}">
+            ${clientIcon(s.client)} ${escapeHtml(s.client || 'Terminal CLI')}
+          </span>
         </td>
         <td>
           ${model ? `<span class="model-dot ${dotCls}" style="margin-right:4px"></span><span class="${modelClass(model)}" style="font-size:0.78rem">${shortModelName(model)}</span>` : '—'}

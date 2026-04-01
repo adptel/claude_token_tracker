@@ -47,6 +47,24 @@ function extractText(content) {
   return '';
 }
 
+/**
+ * Maps the `entrypoint` field to a human-readable client label.
+ * Known values observed in Claude Code JSONL files.
+ */
+function resolveClient(entrypoint) {
+  if (!entrypoint) return 'Terminal CLI';
+  switch (entrypoint) {
+    case 'cli':            return 'Terminal CLI';
+    case 'vscode':         return 'VS Code';
+    case 'jetbrains':      return 'JetBrains';
+    case 'desktop':        return 'Desktop App';
+    case 'remote':         return 'Web (claude.ai)';
+    case 'remote_mobile':  return 'Mobile (claude.ai)';
+    case 'remote_web':     return 'Web (claude.ai)';
+    default:               return entrypoint;
+  }
+}
+
 /** Returns true if this user message is a real human prompt (not a tool result) */
 function isUserTextMessage(entry) {
   if (entry.type !== 'user' || !entry.message) return false;
@@ -72,6 +90,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   const userByUuid = new Map();   // uuid -> user entry (for prompt lookup)
   // Track first text prompt per session
   const sessionFirstPrompt = new Map(); // sessionId -> string
+  const sessionClientMap = new Map();   // sessionId -> client label
 
   for (const filePath of files) {
     const entries = parseJsonlFile(filePath);
@@ -87,6 +106,13 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
         if (!sessionFirstPrompt.has(sessionId)) {
           const text = extractText(entry.message.content).slice(0, 120).replace(/\s+/g, ' ').trim();
           if (text) sessionFirstPrompt.set(sessionId, text);
+        }
+      }
+
+      // Track entrypoint (client type) per session — use first occurrence
+      if ((entry.type === 'user' || entry.type === 'assistant') && entry.entrypoint) {
+        if (!sessionClientMap.has(sessionId)) {
+          sessionClientMap.set(sessionId, resolveClient(entry.entrypoint));
         }
       }
 
@@ -147,6 +173,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
         messages: 0, firstTimestamp: null, lastTimestamp: null,
         models: new Set(),
         firstPrompt: sessionFirstPrompt.get(sessionId) || '',
+        client: sessionClientMap.get(sessionId) || 'Terminal CLI',
       });
     }
     const sess = sessionMap.get(sessionId);
