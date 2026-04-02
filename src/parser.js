@@ -165,6 +165,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   const hourlyMap = {};
   const allMessages = [];  // every message for costly queries / model queries
   const projectMap = {}; // projectName -> { cost, totalTokens, messages, sessions, toolCalls, models: Set }
+  const sessionTimestampsAll = {}; // sessionId -> [timestamps] for rate-limit gap detection
 
   let totalCost = 0, totalInputTokens = 0, totalOutputTokens = 0;
   let totalCacheWrite = 0, totalCacheRead = 0, totalCacheReadSavings = 0, totalMessages = 0;
@@ -198,6 +199,10 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     totalCacheRead += cr;
     totalCacheReadSavings += costs.cacheReadSavings;
     totalMessages++;
+
+    // Track all timestamps per session (for rate-limit gap detection)
+    if (!sessionTimestampsAll[sessionId]) sessionTimestampsAll[sessionId] = [];
+    sessionTimestampsAll[sessionId].push(timestamp);
 
     // Session
     if (!sessionMap.has(sessionId)) {
@@ -278,11 +283,15 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     projectMap[projectName].toolCalls += toolCallCount;
     if (model) projectMap[projectName].models.add(model);
 
+    const wordCount = promptSnippet ? promptSnippet.split(/\s+/).filter(Boolean).length : 0;
+    const tokenDensity = wordCount > 3 ? Math.round(total / wordCount) : 0;
+    const isBloated = inp > 12000 && out < inp * 0.06;
     allMessages.push({
       sessionId, projectName, timestamp, model: modelKey,
       cost: costs.total, inputTokens: inp, outputTokens: out,
       cacheWrite: cw, cacheRead: cr, totalTokens: total,
       prompt: promptSnippet, isAutomated, toolCalls: toolCallCount,
+      tokenDensity, isBloated,
     });
   }
 
@@ -296,6 +305,50 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   const totalAllTokens = totalInputTokens + totalCacheWrite + totalCacheRead + totalOutputTokens;
   const cacheHitRate = totalAllTokens > 0 ? Math.round((totalCacheRead / totalAllTokens) * 100) : 0;
   const zeroCacheSessions = sessions.filter(s => s.cacheRead === 0).length;
+
+  // Cache efficiency score: what % of token reads came from cache vs fresh input
+  const cacheEfficiencyScore = (totalCacheRead + totalInputTokens) > 0
+    ? Math.round(totalCacheRead / (totalCacheRead + totalInputTokens) * 100) : 0;
+
+  // 5-hour billing window (always based on real wall-clock time, not filtered date range)
+  const nowMs = Date.now();
+  const windowStartMs = nowMs - 5 * 60 * 60 * 1000;
+  let windowCost = 0, windowTokens = 0, windowMessages = 0, windowOldestTs = null;
+  for (const { entry } of byUuid.values()) {
+    const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
+    if (ts >= windowStartMs && ts <= nowMs) {
+      const c = calculateCost(entry.message.usage, entry.message.model);
+      windowCost += c.total;
+      const u = entry.message.usage;
+      windowTokens += (u.input_tokens || 0) + (u.output_tokens || 0)
+        + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+      windowMessages++;
+      if (!windowOldestTs || ts < windowOldestTs) windowOldestTs = ts;
+    }
+  }
+  const currentWindow = {
+    cost: windowCost, tokens: windowTokens, messages: windowMessages, windowHours: 5,
+    oldestTs: windowOldestTs ? new Date(windowOldestTs).toISOString() : null,
+  };
+
+  // Rate limit event detection: gaps >=20 min and <8h within same session
+  const rateLimitEvents = [];
+  for (const [sid, timestamps] of Object.entries(sessionTimestampsAll)) {
+    timestamps.sort();
+    for (let i = 1; i < timestamps.length; i++) {
+      const gapMin = (new Date(timestamps[i]) - new Date(timestamps[i - 1])) / 60000;
+      if (gapMin >= 20 && gapMin < 480) {
+        const sess = sessionMap.get(sid);
+        rateLimitEvents.push({
+          sessionId: sid,
+          projectName: sess ? sess.projectName : '',
+          gapMinutes: Math.round(gapMin),
+          timestamp: timestamps[i],
+        });
+      }
+    }
+  }
+  rateLimitEvents.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
   // Top 20 by cost — real user queries first, then automated
   const topMessagesByCost = [
@@ -356,6 +409,9 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
       zeroCacheSessions,
       forecast30d,
       avgDailySpend,
+      cacheEfficiencyScore,
+      currentWindow,
+      rateLimitEventCount: rateLimitEvents.length,
     },
     sessions: sessions.slice(0, 50),
     dailySeries,
@@ -364,6 +420,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     hourlySeries,
     topMessages: topMessagesByCost,
     insights,
+    rateLimitEvents: rateLimitEvents.slice(0, 20),
     projects: Object.entries(projectMap)
       .sort(([, a], [, b]) => b.cost - a.cost)
       .map(([name, d]) => ({ name, ...d, sessions: d.sessions.size, models: Array.from(d.models) })),

@@ -18,6 +18,11 @@ let filterClient = '';
 let filterCostMin = null;
 let filterCostMax = null;
 
+// Previous period summary for trend indicators
+let prevSummary = null;
+// 5h window countdown timer handle
+let windowCountdownInterval = null;
+
 // ===== Formatting helpers =====
 function fmt$(n) {
   if (!n || n < 0.0001) return '$0.00';
@@ -118,12 +123,27 @@ function ttCfg() {
   };
 }
 
+// ===== Trend indicator helper =====
+function trendHtml(curr, prev, isHigherBad = true) {
+  if (prev === undefined || prev === null || prev === 0) return '';
+  const diff = curr - prev;
+  const pct = Math.abs(diff / prev * 100);
+  if (pct < 1) return '';
+  const up = diff > 0;
+  const bad = isHigherBad ? up : !up;
+  const color = bad ? '#ef4444' : '#22c55e';
+  const arrow = up ? '↑' : '↓';
+  return `<span class="trend-indicator" style="color:${color}">${arrow}${pct.toFixed(0)}%</span>`;
+}
+
 // ===== Summary cards =====
 function renderSummaryCards(s) {
-  document.getElementById('total-cost').textContent = fmt$(s.totalCost);
-  document.getElementById('total-all-tokens').textContent = fmtTokens(s.totalAllTokens);
-  document.getElementById('cache-hit-rate').textContent = `${s.cacheHitRate}%`;
-  document.getElementById('cache-savings').textContent = fmt$(s.totalCacheReadSavings);
+  const p = prevSummary; // previous period (may be null)
+
+  document.getElementById('total-cost').innerHTML = fmt$(s.totalCost) + trendHtml(s.totalCost, p?.totalCost, true);
+  document.getElementById('total-all-tokens').innerHTML = fmtTokens(s.totalAllTokens) + trendHtml(s.totalAllTokens, p?.totalAllTokens, true);
+  document.getElementById('cache-hit-rate').innerHTML = `${s.cacheHitRate}%` + trendHtml(s.cacheHitRate, p?.cacheHitRate, false);
+  document.getElementById('cache-savings').innerHTML = fmt$(s.totalCacheReadSavings) + trendHtml(s.totalCacheReadSavings, p?.totalCacheReadSavings, false);
   document.getElementById('total-messages-sub').textContent = `${s.totalMessages.toLocaleString()} messages`;
   document.getElementById('total-token-breakdown').textContent =
     `${fmtTokens(s.totalInputTokens)} in · ${fmtTokens(s.totalCacheWrite)} cache w · ${fmtTokens(s.totalOutputTokens)} out`;
@@ -131,20 +151,24 @@ function renderSummaryCards(s) {
   document.getElementById('total-sessions-sub').textContent = `${s.totalSessions} sessions · ${s.totalProjects} projects`;
 
   // New stat cards
-  document.getElementById('cost-per-msg').textContent = fmt$(s.costPerMessage);
-  document.getElementById('avg-tokens-session').textContent = fmtTokens(s.avgTokensPerSession);
+  document.getElementById('cost-per-msg').innerHTML = fmt$(s.costPerMessage) + trendHtml(s.costPerMessage, p?.costPerMessage, true);
+  document.getElementById('avg-tokens-session').innerHTML = fmtTokens(s.avgTokensPerSession) + trendHtml(s.avgTokensPerSession, p?.avgTokensPerSession, true);
   document.getElementById('zero-cache-count').textContent = s.zeroCacheSessions;
 
   // Forecast
   if (s.forecast30d !== undefined) {
-    document.getElementById('forecast-30d').textContent = fmt$(s.forecast30d);
+    document.getElementById('forecast-30d').innerHTML = fmt$(s.forecast30d) + trendHtml(s.forecast30d, p?.forecast30d, true);
     document.getElementById('forecast-sub').textContent = `${fmt$(s.avgDailySpend)}/day avg (last 7d)`;
   }
 
   // Budget alert
   const budgetVal = parseFloat(localStorage.getItem('budget') || '0');
   const budgetInput = document.getElementById('budget-input');
-  if (!budgetInput.value) budgetInput.value = localStorage.getItem('budget') || '';
+  // Only pre-fill if the user hasn't typed anything yet
+  if (!budgetInput.dataset.dirty && !budgetInput.value) {
+    const stored = localStorage.getItem('budget');
+    if (stored && stored !== '0') budgetInput.value = stored;
+  }
   if (budgetVal > 0) {
     const pct = Math.round(s.totalCost / budgetVal * 100);
     document.getElementById('budget-status').textContent = `${fmt$(s.totalCost)} / ${fmt$(budgetVal)}`;
@@ -153,6 +177,61 @@ function renderSummaryCards(s) {
     document.getElementById('budget-status').textContent = 'Not set';
     document.getElementById('budget-alert-card').className = 'stat-card';
   }
+
+  // Cache efficiency score
+  const effEl = document.getElementById('cache-efficiency-score');
+  if (effEl) {
+    const score = s.cacheEfficiencyScore || 0;
+    effEl.textContent = `${score}%`;
+    const card = document.getElementById('cache-efficiency-card');
+    if (card) card.className = `stat-card${score >= 60 ? ' green' : score >= 30 ? '' : ''}`;
+  }
+
+  // 5h billing window
+  const win = s.currentWindow;
+  if (win) {
+    document.getElementById('window-cost').textContent = fmt$(win.cost);
+    document.getElementById('window-messages-count').textContent = `${win.messages} msg`;
+    startWindowCountdown(win.oldestTs, win.windowHours);
+  }
+}
+
+// ===== 5h Window countdown =====
+function startWindowCountdown(oldestTs, windowHours) {
+  if (windowCountdownInterval) { clearInterval(windowCountdownInterval); windowCountdownInterval = null; }
+  const countdownEl = document.getElementById('window-countdown');
+  const barFill = document.getElementById('window-bar-fill');
+  if (!countdownEl) return;
+
+  if (!oldestTs) {
+    countdownEl.textContent = '—';
+    if (barFill) barFill.style.width = '0%';
+    return;
+  }
+
+  const windowMs = windowHours * 60 * 60 * 1000;
+  const oldestMs = new Date(oldestTs).getTime();
+
+  function update() {
+    const now = Date.now();
+    const expiresAt = oldestMs + windowMs;
+    const remaining = expiresAt - now;
+    if (remaining <= 0) {
+      countdownEl.textContent = 'expired';
+      if (barFill) barFill.style.width = '0%';
+      clearInterval(windowCountdownInterval);
+      return;
+    }
+    const totalElapsed = now - oldestMs;
+    const pct = Math.min(100, Math.round((totalElapsed / windowMs) * 100));
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    countdownEl.textContent = `${mins}m ${String(secs).padStart(2,'0')}s`;
+    if (barFill) barFill.style.width = `${pct}%`;
+  }
+
+  update();
+  windowCountdownInterval = setInterval(update, 1000);
 }
 
 // ===== Daily chart =====
@@ -376,6 +455,8 @@ function renderTopMessages(messages) {
         <span><span class="meta-label">Cache R:</span> ${fmtTokens(m.cacheRead)}</span>
         <span><span class="meta-label">Output:</span> ${fmtTokens(m.outputTokens)}</span>
         <span><span class="meta-label">Project:</span> <span style="color:var(--text-muted)">${escapeHtml(m.projectName)}</span></span>
+        ${m.isBloated ? '<span class="bloat-badge">⚠ Context Bloat</span>' : ''}
+        ${m.tokenDensity > 500 ? `<span class="density-badge">${fmtTokens(m.tokenDensity)} tok/word</span>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -575,6 +656,18 @@ function updateDateLabel(days) {
   label.textContent = `${start ? fmt(start) : '…'} – ${end ? fmt(end) : '…'}`;
 }
 
+// ===== Date range helpers for previous period =====
+function getPrevDateRange(days) {
+  if (!days || days === 0 || days === 'custom') return null;
+  const tzOff = new Date().getTimezoneOffset();
+  const endDate = new Date();
+  endDate.setDate(endDate.getDate() - days);
+  const startDate = new Date(endDate);
+  startDate.setDate(startDate.getDate() - days + 1);
+  const f = d => d.toISOString().slice(0, 10);
+  return { start: f(startDate), end: f(endDate), tzOffset: tzOff };
+}
+
 // ===== Data loading =====
 async function loadData() {
   const btn = document.getElementById('refresh-btn');
@@ -585,10 +678,36 @@ async function loadData() {
     if (start) params.set('start', start);
     if (end) params.set('end', end);
     params.set('tzOffset', new Date().getTimezoneOffset());
-    const res = await fetch('/api/analytics?' + params.toString());
+
+    // Compute previous period params for trend indicators
+    const prevRange = getPrevDateRange(activeDateRange);
+    let prevFetch = null;
+    if (prevRange) {
+      const pp = new URLSearchParams();
+      pp.set('start', prevRange.start);
+      pp.set('end', prevRange.end);
+      pp.set('tzOffset', prevRange.tzOffset);
+      prevFetch = fetch('/api/analytics?' + pp.toString());
+    }
+
+    const [res, prevRes] = await Promise.all([
+      fetch('/api/analytics?' + params.toString()),
+      prevFetch || Promise.resolve(null),
+    ]);
+
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Unknown error');
+
+    // Update previous period summary
+    prevSummary = null;
+    if (prevRes) {
+      try {
+        const prevJson = await prevRes.json();
+        if (prevJson.ok) prevSummary = prevJson.data.summary;
+      } catch { /* ignore prev period errors */ }
+    }
+
     analyticsData = json.data;
     allSessions = json.data.sessions;
     renderAll(analyticsData);
@@ -614,6 +733,25 @@ function renderAll(data) {
   renderModelQueries(data.modelBreakdown, data.modelQueries);
   renderInsights(data.insights);
   renderProjects(data.projects, data.summary.totalCost);
+  renderRateLimitEvents(data.rateLimitEvents);
+}
+
+// ===== Rate limit events =====
+function renderRateLimitEvents(events) {
+  const section = document.getElementById('rate-limit-section');
+  const list = document.getElementById('rate-limit-list');
+  if (!section || !list) return;
+  if (!events || events.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  list.innerHTML = events.map(e => `
+    <div class="rate-limit-row">
+      <div class="rate-limit-gap">${e.gapMinutes}m gap</div>
+      <div class="rate-limit-info">
+        <span class="rate-limit-project">${escapeHtml(e.projectName || 'Unknown')}</span>
+        <span class="rate-limit-ts">${fmtDateTime(e.timestamp)}</span>
+      </div>
+      <div class="rate-limit-bar" style="width:${Math.min(100, Math.round(e.gapMinutes / 4.8))}%"></div>
+    </div>`).join('');
 }
 
 // ===== Projects =====
@@ -776,16 +914,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Budget input
+  const budgetInputEl = document.getElementById('budget-input');
+  const budgetSavedMsg = document.getElementById('budget-saved-msg');
+  let budgetSaveTimer = null;
+
   const applyBudget = () => {
-    const val = document.getElementById('budget-input').value;
-    localStorage.setItem('budget', val || '0');
+    const val = budgetInputEl.value.trim();
+    const num = parseFloat(val);
+    if (val && !isNaN(num) && num > 0) {
+      localStorage.setItem('budget', String(num));
+    } else {
+      localStorage.removeItem('budget');
+    }
+    budgetInputEl.dataset.dirty = '1';
     if (analyticsData) renderSummaryCards(analyticsData.summary);
+    // Show saved confirmation
+    if (budgetSavedMsg) {
+      budgetSavedMsg.style.display = 'block';
+      clearTimeout(budgetSaveTimer);
+      budgetSaveTimer = setTimeout(() => { budgetSavedMsg.style.display = 'none'; }, 2000);
+    }
   };
+
   document.getElementById('budget-set-btn').addEventListener('click', applyBudget);
-  document.getElementById('budget-input').addEventListener('keydown', e => { if (e.key === 'Enter') applyBudget(); });
+  budgetInputEl.addEventListener('keydown', e => { if (e.key === 'Enter') applyBudget(); });
+  // Also save on change (after user stops typing)
+  budgetInputEl.addEventListener('change', applyBudget);
   document.getElementById('budget-clear-btn').addEventListener('click', () => {
     localStorage.removeItem('budget');
-    document.getElementById('budget-input').value = '';
+    budgetInputEl.value = '';
+    budgetInputEl.dataset.dirty = '1';
+    if (budgetSavedMsg) budgetSavedMsg.style.display = 'none';
     if (analyticsData) renderSummaryCards(analyticsData.summary);
   });
 
