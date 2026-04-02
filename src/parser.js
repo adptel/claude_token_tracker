@@ -164,6 +164,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   const modelMap = {};
   const hourlyMap = {};
   const allMessages = [];  // every message for costly queries / model queries
+  const projectMap = {}; // projectName -> { cost, totalTokens, messages, sessions, toolCalls, models: Set }
 
   let totalCost = 0, totalInputTokens = 0, totalOutputTokens = 0;
   let totalCacheWrite = 0, totalCacheRead = 0, totalCacheReadSavings = 0, totalMessages = 0;
@@ -268,6 +269,15 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     hourlyMap[hour].cost += costs.total;
     hourlyMap[hour].messages++;
 
+    // Project
+    if (!projectMap[projectName]) projectMap[projectName] = { cost: 0, totalTokens: 0, messages: 0, sessions: new Set(), toolCalls: 0, models: new Set() };
+    projectMap[projectName].cost += costs.total;
+    projectMap[projectName].totalTokens += total;
+    projectMap[projectName].messages++;
+    projectMap[projectName].sessions.add(sessionId);
+    projectMap[projectName].toolCalls += toolCallCount;
+    if (model) projectMap[projectName].models.add(model);
+
     allMessages.push({
       sessionId, projectName, timestamp, model: modelKey,
       cost: costs.total, inputTokens: inp, outputTokens: out,
@@ -280,10 +290,12 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   const sessions = Array.from(sessionMap.values()).map(s => ({
     ...s,
     models: Array.from(s.models),
+    durationMs: s.firstTimestamp && s.lastTimestamp ? new Date(s.lastTimestamp) - new Date(s.firstTimestamp) : 0,
   })).sort((a, b) => b.cost - a.cost);
 
   const totalAllTokens = totalInputTokens + totalCacheWrite + totalCacheRead + totalOutputTokens;
   const cacheHitRate = totalAllTokens > 0 ? Math.round((totalCacheRead / totalAllTokens) * 100) : 0;
+  const zeroCacheSessions = sessions.filter(s => s.cacheRead === 0).length;
 
   // Top 20 by cost — real user queries first, then automated
   const topMessagesByCost = [
@@ -294,6 +306,15 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   const dailySeries = Object.entries(dailyMap)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, d]) => ({ date, ...d }));
+
+  // Forecasting: use last 7 days to project 30-day spend
+  const recentDays = dailySeries.slice(-7);
+  const avgDailySpend = recentDays.length > 0 ? recentDays.reduce((s, d) => s + d.cost, 0) / recentDays.length : 0;
+  const forecast30d = avgDailySpend * 30;
+
+  // Anomaly detection
+  const avgDailyCost = dailySeries.length > 0 ? dailySeries.reduce((s, d) => s + d.cost, 0) / dailySeries.length : 0;
+  const anomalyDays = dailySeries.filter(d => d.cost > avgDailyCost * 2.5 && d.cost > 0.01).map(d => ({ date: d.date, cost: d.cost, ratio: d.cost / avgDailyCost }));
 
   const modelBreakdown = Object.entries(modelMap)
     .sort(([, a], [, b]) => b.cost - a.cost)
@@ -320,6 +341,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     totalCost, totalMessages, totalCacheRead,
     totalCacheReadSavings, cacheHitRate,
     totalAllTokens, totalOutputTokens,
+    anomalyDays, avgDailyCost,
   });
 
   return {
@@ -329,6 +351,11 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
       totalAllTokens, cacheHitRate,
       totalMessages, totalSessions: sessions.length,
       totalProjects: new Set(sessions.map(s => s.projectName)).size,
+      costPerMessage: totalMessages > 0 ? totalCost / totalMessages : 0,
+      avgTokensPerSession: sessions.length > 0 ? Math.round(totalAllTokens / sessions.length) : 0,
+      zeroCacheSessions,
+      forecast30d,
+      avgDailySpend,
     },
     sessions: sessions.slice(0, 50),
     dailySeries,
@@ -337,6 +364,9 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     hourlySeries,
     topMessages: topMessagesByCost,
     insights,
+    projects: Object.entries(projectMap)
+      .sort(([, a], [, b]) => b.cost - a.cost)
+      .map(([name, d]) => ({ name, ...d, sessions: d.sessions.size, models: Array.from(d.models) })),
   };
 }
 
@@ -445,8 +475,16 @@ function fmt$(n) {
   return `$${n.toFixed(2)}`;
 }
 
+function fmtTokens(n) {
+  if (!n) return '0';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
+}
+
 function generateInsights({ sessions, dailySeries, topMessages, totalCost, totalMessages,
-  totalCacheRead, totalCacheReadSavings, cacheHitRate, totalAllTokens, totalOutputTokens }) {
+  totalCacheRead, totalCacheReadSavings, cacheHitRate, totalAllTokens, totalOutputTokens,
+  anomalyDays = [], avgDailyCost = 0 }) {
 
   const tips = [];
 
@@ -517,6 +555,40 @@ function generateInsights({ sessions, dailySeries, topMessages, totalCost, total
     summary: 'Opus costs 5× more than Sonnet and 18× more than Haiku per token.',
     detail: `Pricing per 1M tokens: Opus $15 input/$75 output, Sonnet $3/$15, Haiku $0.80/$4. For routine tasks like file editing, code completion, and simple Q&A, Haiku or Sonnet deliver excellent results at a fraction of the cost. Reserve Opus for complex multi-step reasoning.`,
   });
+
+  // Anomaly detection
+  if (anomalyDays.length > 0) {
+    const top = anomalyDays[0];
+    tips.push({
+      icon: '🚨',
+      title: `Anomaly: ${top.date} spent ${top.ratio.toFixed(1)}× the daily average`,
+      summary: `${fmt$(top.cost)} on ${top.date} vs ${fmt$(avgDailyCost)} daily avg.`,
+      detail: `This spike is likely due to a large context window session or many rapid iterations. Check the Sessions tab filtered to that date to identify the culprit.`,
+    });
+  }
+
+  // Context bloat detection
+  const bloatySessions = sessions.filter(s => s.messages > 5 && s.totalTokens / s.messages > 50000);
+  if (bloatySessions.length > 0) {
+    tips.push({
+      icon: '📦',
+      title: `${bloatySessions.length} sessions have context bloat`,
+      summary: `Average context >50K tokens/message — each reply re-reads a huge history.`,
+      detail: `Use /clear between distinct tasks. Session "${bloatySessions[0].firstPrompt?.slice(0, 40) || bloatySessions[0].sessionId.slice(0, 8)}" had avg ${fmtTokens(Math.round(bloatySessions[0].totalTokens / bloatySessions[0].messages))} tokens per message.`,
+    });
+  }
+
+  // Opus cost optimisation
+  const opusSessions = sessions.filter(s => s.models?.some && s.models.some(m => m.includes('opus')));
+  if (opusSessions.length > 0) {
+    const opusCost = opusSessions.reduce((t, s) => t + s.cost, 0);
+    tips.push({
+      icon: '💡',
+      title: `${fmt$(opusCost)} spent on Opus — consider Sonnet for routine tasks`,
+      summary: `Opus costs 5× more than Sonnet. ${opusSessions.length} sessions used Opus.`,
+      detail: `For file editing, code explanation, and simple Q&A, Sonnet provides near-identical results at 5× less cost. Reserve Opus for multi-step planning and complex architecture decisions.`,
+    });
+  }
 
   return tips;
 }
