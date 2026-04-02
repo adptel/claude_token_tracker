@@ -64,7 +64,7 @@
       </a>
       <a href="#" class="nav-item" data-section="messages">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13 2H3a1 1 0 00-1 1v7a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V3a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
-        Costly Queries
+        Costly Prompts
       </a>
       <a href="#" class="nav-item" data-section="models">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 2v6l4 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -101,37 +101,62 @@
           <svg class="chevron" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <div class="tokens-explainer-body" id="tokens-explainer-body" style="display:none">
-          <p class="explainer-intro">Every time you send a message, Claude doesn't just read your latest message. It re-reads your <strong>entire conversation</strong> from the beginning. That's why tokens add up fast.</p>
+          <p class="explainer-intro">Every time you send a message, Claude re-reads your <strong>entire conversation</strong> from the beginning — not just your latest message. That's why tokens compound fast in long sessions.</p>
 
-          <div class="explainer-example">
-            <div class="explainer-example-title">EXAMPLE: A 3-MESSAGE CONVERSATION</div>
-            <div class="explainer-row">
-              <div class="explainer-msg-label">Message 1</div>
-              <div class="explainer-msg-text">You send "Help me fix this bug." Claude reads your message fresh (<span class="tok-input">input</span>) and saves the conversation to cache (<span class="tok-cw">cache write</span>).</div>
-              <div class="explainer-tokens">~4K tokens</div>
+          <!-- 4 token type cards -->
+          <div class="tok-type-grid">
+            <div class="tok-type-card" style="--tok-color:#3b82f6">
+              <div class="tok-type-dot" style="background:#3b82f6"></div>
+              <div class="tok-type-name">Input</div>
+              <div class="tok-type-desc">Your message + full conversation history. Processed fresh every turn. Full price.</div>
             </div>
-            <div class="explainer-row">
-              <div class="explainer-msg-label">Message 2</div>
-              <div class="explainer-msg-text">You reply "Try the other file." Claude reuses message 1 from cache (<span class="tok-cr">cache read</span> — 10× cheaper) and only processes your new message fresh (<span class="tok-input">input</span>). Then saves the updated conversation (<span class="tok-cw">cache write</span>).</div>
-              <div class="explainer-tokens">~8K tokens</div>
+            <div class="tok-type-card" style="--tok-color:#ef4444">
+              <div class="tok-type-dot" style="background:#ef4444"></div>
+              <div class="tok-type-name">Cache Write</div>
+              <div class="tok-type-desc">Claude saves the context so the next message doesn't re-process it. 1.25× input, once only.</div>
             </div>
-            <div class="explainer-row">
-              <div class="explainer-msg-label">Message 3</div>
-              <div class="explainer-msg-text">Claude reuses messages 1–2 from cache (<span class="tok-cr">cache read</span>) and processes your new message fresh (<span class="tok-input">input</span>). Claude's reply is <span class="tok-out">output</span>.</div>
-              <div class="explainer-tokens">~14K tokens</div>
+            <div class="tok-type-card" style="--tok-color:#f59e0b">
+              <div class="tok-type-dot" style="background:#f59e0b"></div>
+              <div class="tok-type-name">Cache Read</div>
+              <div class="tok-type-desc">Follow-up messages reuse saved context at 10× cheaper than input. More reads = more savings.</div>
             </div>
-            <div class="explainer-note">Without caching, every message would be processed at full price. Cache reads save you up to 10× on repeated context.</div>
+            <div class="tok-type-card" style="--tok-color:#22c55e">
+              <div class="tok-type-dot" style="background:#22c55e"></div>
+              <div class="tok-type-name">Output</div>
+              <div class="tok-type-desc">Claude's response tokens. Most expensive per token — but usually the smallest volume.</div>
+            </div>
           </div>
 
-          <div class="explainer-legend">
-            <div class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span><strong>Input</strong> — Your message + conversation history, processed fresh. Full price.</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span><strong>Cache writes</strong> — Claude saves your conversation so it doesn't re-process everything next time. Costs 1.25× input, but only happens once.</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span><strong>Cache reads</strong> — Follow-up messages reuse the saved context. 10× cheaper than input. More cache reads = more savings.</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span><strong>Output</strong> — What Claude writes back. Most expensive per token, but usually the smallest amount.</div>
+          <!-- Example timeline -->
+          <div class="tok-timeline">
+            <div class="tok-timeline-title">Example: 3-message conversation</div>
+            <div class="tok-timeline-item">
+              <div class="tok-step">1</div>
+              <div class="tok-step-body">
+                <div class="tok-step-text">You: <em>"Help me fix this bug."</em> — Claude reads it fresh (<span class="tok-input">input</span>) and saves the conversation (<span class="tok-cw">cache write</span>).</div>
+              </div>
+              <div class="tok-step-cost">~4K tokens</div>
+            </div>
+            <div class="tok-timeline-item">
+              <div class="tok-step">2</div>
+              <div class="tok-step-body">
+                <div class="tok-step-text">You: <em>"Try the other file."</em> — Message 1 loads from cache (<span class="tok-cr">cache read</span> = 10× cheaper). Only your new message is fresh (<span class="tok-input">input</span>).</div>
+              </div>
+              <div class="tok-step-cost">~8K tokens</div>
+            </div>
+            <div class="tok-timeline-item">
+              <div class="tok-step">3</div>
+              <div class="tok-step-body">
+                <div class="tok-step-text">You: Follow-up — Messages 1–2 load from cache (<span class="tok-cr">cache read</span>). New message is <span class="tok-input">input</span>. Claude's reply is <span class="tok-out">output</span>.</div>
+              </div>
+              <div class="tok-step-cost">~14K tokens</div>
+            </div>
+            <div class="tok-timeline-note">Without caching, every message would be full input price. Cache reads save up to 10× on repeated context.</div>
           </div>
 
           <div class="explainer-tip">
-            <strong>Tip:</strong> Use <code>/clear</code> when switching tasks. It resets the conversation so Claude stops re-reading old context you no longer need.
+            <span>💡</span>
+            <span>Use <code>/clear</code> when switching tasks — it resets context so Claude stops re-reading history you no longer need.</span>
           </div>
         </div>
       </div>
@@ -218,10 +243,10 @@
               <th>First Prompt</th>
               <th>Client</th>
               <th>Model</th>
+              <th>Prompts</th>
               <th>Messages</th>
+              <th>Tool Calls</th>
               <th>Total Tokens</th>
-              <th>Read (input)</th>
-              <th>Written (output)</th>
               <th class="right">Cost</th>
             </tr>
           </thead>
@@ -230,11 +255,11 @@
       </div>
     </section>
 
-    <!-- ===== COSTLY QUERIES ===== -->
+    <!-- ===== COSTLY PROMPTS ===== -->
     <section id="messages" class="section" style="display:none">
       <div class="section-header">
-        <h1>Costly Queries</h1>
-        <p class="section-desc">Top 20 most token-intensive individual API calls, ranked by total tokens used</p>
+        <h1>Costly Prompts</h1>
+        <p class="section-desc">Top 20 most expensive individual prompts, ranked by cost</p>
       </div>
       <div class="messages-list" id="messages-list"></div>
     </section>
@@ -256,12 +281,13 @@
             <thead>
               <tr>
                 <th>Model</th>
+                <th>Sessions</th>
+                <th>Prompts</th>
                 <th>Messages</th>
+                <th>Tool Calls</th>
                 <th>Total Tokens</th>
-                <th>Read</th>
-                <th>Written</th>
                 <th class="right">Cost</th>
-                <th class="right">% of Total</th>
+                <th class="right">%</th>
               </tr>
             </thead>
             <tbody id="model-tbody"></tbody>

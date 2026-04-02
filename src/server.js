@@ -20,6 +20,7 @@ async function createServer(options = {}) {
       const opts = {};
       if (req.query.start) opts.startDate = req.query.start;
       if (req.query.end) opts.endDate = req.query.end;
+      if (req.query.tzOffset) opts.tzOffset = parseInt(req.query.tzOffset, 10);
       const data = await buildAnalytics(dataDir, opts);
       res.json({ ok: true, data });
     } catch (err) {

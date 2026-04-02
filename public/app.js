@@ -92,15 +92,16 @@ function escapeHtml(s) {
 }
 
 // ===== Chart defaults =====
-Chart.defaults.color = '#888898';
-Chart.defaults.borderColor = '#2a2a30';
+Chart.defaults.color = '#5c6080';
+Chart.defaults.borderColor = '#dde0ef';
 Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
 Chart.defaults.font.size = 12;
 
 function ttCfg() {
   return {
-    backgroundColor: '#1a1a1e', borderColor: '#2a2a30', borderWidth: 1,
-    titleColor: '#e8e8ed', bodyColor: '#888898', padding: 10, cornerRadius: 6,
+    backgroundColor: '#ffffff', borderColor: '#dde0ef', borderWidth: 1,
+    titleColor: '#18192b', bodyColor: '#5c6080', padding: 10, cornerRadius: 6,
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
   };
 }
 
@@ -124,7 +125,10 @@ function renderDailyChart(series) {
   dailyChart = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: series.map(d => d.date),
+      labels: series.map(d => {
+        const [y, m, day] = d.date.split('-');
+        return `${m}/${day}`;
+      }),
       datasets: [
         { label:'Cost ($)', data: series.map(d => d.cost), backgroundColor:'rgba(217,119,6,0.7)', borderColor:'#d97706', borderWidth:1, borderRadius:4, yAxisID:'y' },
         { label:'Output Tokens', data: series.map(d => d.outputTokens), type:'line', borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderWidth:2, pointRadius:3, pointBackgroundColor:'#3b82f6', tension:0.3, fill:true, yAxisID:'y2' },
@@ -135,8 +139,8 @@ function renderDailyChart(series) {
       interaction:{ mode:'index', intersect:false },
       plugins:{ legend:{display:false}, tooltip:{ ...ttCfg(), callbacks:{ label:(c)=> c.datasetIndex===0 ? ` Cost: ${fmt$(c.parsed.y)}` : ` Output: ${fmtTokens(c.parsed.y)}` } } },
       scales:{
-        x:{ grid:{color:'#1e1e24'}, ticks:{maxRotation:45,font:{size:11}} },
-        y:{ type:'linear', position:'left', grid:{color:'#1e1e24'}, ticks:{callback:v=>fmt$(v),font:{size:11}} },
+        x:{ grid:{color:'#eaecf4'}, ticks:{maxRotation:45,font:{size:11}} },
+        y:{ type:'linear', position:'left', grid:{color:'#eaecf4'}, ticks:{callback:v=>fmt$(v),font:{size:11}} },
         y2:{ type:'linear', position:'right', grid:{drawOnChartArea:false}, ticks:{callback:v=>fmtTokens(v),font:{size:11}} },
       },
     },
@@ -159,7 +163,7 @@ function renderHourlyChart(series) {
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{display:false}, tooltip:{ ...ttCfg(), callbacks:{ label:(c)=>[` ${c.parsed.y} messages`,` Cost: ${fmt$(costs[c.dataIndex])}`] } } },
-      scales:{ x:{grid:{display:false},ticks:{font:{size:10},maxRotation:0}}, y:{grid:{color:'#1e1e24'},ticks:{font:{size:11},stepSize:1}} },
+      scales:{ x:{grid:{display:false},ticks:{font:{size:10},maxRotation:0}}, y:{grid:{color:'#eaecf4'},ticks:{font:{size:11},stepSize:1}} },
     },
   });
 }
@@ -182,7 +186,7 @@ function renderSessionsTable(sessions, filter = '') {
   countLabel.textContent = `${list.length} session${list.length !== 1 ? 's' : ''}`;
 
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon">📂</div><h3>No sessions found</h3><p>${filter ? 'No matches for "' + escapeHtml(filter) + '"' : 'No Claude Code sessions detected'}</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="padding:0"><div class="empty-state"><div class="empty-state-icon">📂</div><h3>No sessions found</h3><p>${filter ? 'No matches for "' + escapeHtml(filter) + '"' : 'No Claude Code sessions detected'}</p></div></td></tr>`;
     return;
   }
 
@@ -210,10 +214,10 @@ function renderSessionsTable(sessions, filter = '') {
         <td>
           ${model ? `<span class="model-dot ${dotCls}" style="margin-right:4px"></span><span class="${modelClass(model)}" style="font-size:0.78rem">${shortModelName(model)}</span>` : '—'}
         </td>
+        <td class="num">${s.totalPrompts || 0}</td>
         <td class="num">${s.messages}</td>
+        <td class="num" style="color:var(--blue)">${s.toolCalls || 0}</td>
         <td class="num">${fmtTokens(s.totalTokens)}</td>
-        <td class="num">${fmtTokens(s.inputTokens)}</td>
-        <td class="num">${fmtTokens(s.outputTokens)}</td>
         <td>
           <div class="cost-bar-wrap">
             <div class="cost-bar" style="width:${barW}px"></div>
@@ -275,6 +279,7 @@ async function openSessionModal(sessionId, firstPrompt) {
           <div class="turn-stats">
             <span>${fmtDateTime(t.timestamp)}</span>
             ${t.model ? `<span><span class="model-dot ${modelDotClass(t.model)}" style="margin-right:3px"></span>${shortModelName(t.model)}</span>` : ''}
+            ${t.toolCalls > 0 ? `<span style="color:var(--blue)">⚙ ${t.toolCalls} tool${t.toolCalls !== 1 ? 's' : ''}</span>` : ''}
             <span>${fmt$(t.cost)}</span>
           </div>
         </div>
@@ -314,7 +319,13 @@ function renderTopMessages(messages) {
       </div>
       ${m.prompt
         ? `<div class="message-prompt ${isAuto ? 'muted' : ''}">${escapeHtml(m.prompt)}${(!isAuto && m.prompt.length >= 200) ? '…' : ''}</div>`
-        : `<div class="message-prompt muted">[ No user prompt — tool call or continuation ]</div>`
+        : `<div class="no-prompt-wrap">
+             <div class="no-prompt-label">No user message in this turn</div>
+             <div class="no-prompt-chips">
+               <span class="type-chip tc-tool">⚙ Tool result</span>
+               <span class="type-chip tc-cont">↩ Auto-continuation</span>
+             </div>
+           </div>`
       }
       <div class="message-meta">
         <span><span class="meta-label">Model:</span> <span class="model-pill ${modelClass(m.model)}">${shortModelName(m.model)}</span></span>
@@ -337,12 +348,12 @@ function renderModelChart(breakdown) {
     type:'doughnut',
     data:{
       labels: breakdown.map(m => shortModelName(m.model)),
-      datasets:[{ data:breakdown.map(m=>m.cost), backgroundColor:COLORS.slice(0,breakdown.length), borderColor:'#141416', borderWidth:2 }],
+      datasets:[{ data:breakdown.map(m=>m.cost), backgroundColor:COLORS.slice(0,breakdown.length), borderColor:'#ffffff', borderWidth:2 }],
     },
     options:{
       responsive:true, maintainAspectRatio:false, cutout:'60%',
       plugins:{
-        legend:{position:'bottom',labels:{padding:16,font:{size:12},color:'#888898'}},
+        legend:{position:'bottom',labels:{padding:16,font:{size:12},color:'#5c6080'}},
         tooltip:{ ...ttCfg(), callbacks:{ label:(c)=>{ const t=c.dataset.data.reduce((a,b)=>a+b,0); return ` ${fmt$(c.parsed)} (${t>0?((c.parsed/t)*100).toFixed(1):0}%)`; } } },
       },
     },
@@ -353,7 +364,7 @@ function renderModelChart(breakdown) {
 function renderModelTable(breakdown, totalCost) {
   const tbody = document.getElementById('model-tbody');
   if (!breakdown || breakdown.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:20px">No data</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:20px">No data</td></tr>';
     return;
   }
   tbody.innerHTML = breakdown.map(m => {
@@ -364,14 +375,15 @@ function renderModelTable(breakdown, totalCost) {
         <span class="${modelClass(m.model)}" style="font-weight:500">${shortModelName(m.model)}</span>
         <span style="margin-left:6px;font-size:0.72rem;color:var(--text-dim)">${escapeHtml(m.model)}</span>
       </td>
+      <td class="num">${(m.sessions || 0).toLocaleString()}</td>
+      <td class="num">${(m.prompts || 0).toLocaleString()}</td>
       <td class="num">${m.messages.toLocaleString()}</td>
+      <td class="num" style="color:var(--blue)">${(m.toolCalls || 0).toLocaleString()}</td>
       <td class="num">${fmtTokens(m.totalTokens)}</td>
-      <td class="num">${fmtTokens(m.inputTokens)}</td>
-      <td class="num">${fmtTokens(m.outputTokens)}</td>
       <td class="cost">${fmt$(m.cost)}</td>
       <td class="right">
         <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
-          <div style="width:60px;height:4px;border-radius:2px;background:var(--bg3);overflow:hidden">
+          <div style="width:60px;height:4px;border-radius:2px;background:var(--bg4);overflow:hidden">
             <div style="height:100%;width:${Math.min(100,parseFloat(pct))}%;background:var(--accent);border-radius:2px"></div>
           </div>
           <span style="font-size:0.78rem;color:var(--text-muted)">${pct}%</span>
@@ -425,7 +437,16 @@ function renderModelQueries(modelBreakdown, modelQueries) {
               <span class="message-cost-badge">${fmt$(m.cost)}</span>
             </div>
           </div>
-          <div class="message-prompt ${!m.prompt || isAuto ? 'muted' : ''}">${m.prompt ? escapeHtml(m.prompt) + (m.prompt.length >= 200 ? '…' : '') : '[ Tool call / no user prompt ]'}</div>
+          ${m.prompt
+            ? `<div class="message-prompt ${isAuto ? 'muted' : ''}">${escapeHtml(m.prompt)}${(m.prompt.length >= 200 ? '…' : '')}</div>`
+            : `<div class="no-prompt-wrap">
+                 <div class="no-prompt-label">No user message in this turn</div>
+                 <div class="no-prompt-chips">
+                   <span class="type-chip tc-tool">⚙ Tool result</span>
+                   <span class="type-chip tc-cont">↩ Auto-continuation</span>
+                 </div>
+               </div>`
+          }
           <div class="message-meta">
             <span><span class="meta-label">Input:</span> ${fmtTokens(m.inputTokens)}</span>
             <span><span class="meta-label">Cache R:</span> ${fmtTokens(m.cacheRead)}</span>
@@ -513,6 +534,7 @@ async function loadData() {
     const params = new URLSearchParams();
     if (start) params.set('start', start);
     if (end) params.set('end', end);
+    params.set('tzOffset', new Date().getTimezoneOffset());
     const res = await fetch('/api/analytics?' + params.toString());
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
