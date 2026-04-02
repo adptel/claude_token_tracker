@@ -115,6 +115,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   // Track first text prompt per session
   const sessionFirstPrompt = new Map(); // sessionId -> string
   const sessionClientMap = new Map();   // sessionId -> client label
+  const sessionPromptCount = new Map(); // sessionId -> count of real user prompts
 
   for (const filePath of files) {
     const entries = parseJsonlFile(filePath);
@@ -126,11 +127,12 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
 
       if (isUserTextMessage(entry)) {
         userByUuid.set(entry.uuid, entry);
-        // Track the first NON-automated user prompt per session
-        if (!sessionFirstPrompt.has(sessionId)) {
-          const text = extractText(entry.message.content).replace(/\s+/g, ' ').trim();
-          // Skip automation messages — keep looking for a real human prompt
-          if (text && !automationLabel(text)) {
+        const text = extractText(entry.message.content).replace(/\s+/g, ' ').trim();
+        if (text && !automationLabel(text)) {
+          // Count real user prompts per session
+          sessionPromptCount.set(sessionId, (sessionPromptCount.get(sessionId) || 0) + 1);
+          // Track first NON-automated prompt
+          if (!sessionFirstPrompt.has(sessionId)) {
             sessionFirstPrompt.set(sessionId, text.slice(0, 120));
           }
         }
@@ -156,7 +158,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   }
 
   // ── Pass 2: aggregate ──────────────────────────────────────────────────────
-  const { startDate, endDate } = opts;
+  const { startDate, endDate, tzOffset = 0 } = opts;
   const sessionMap = new Map();
   const dailyMap = {};
   const modelMap = {};
@@ -171,13 +173,17 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     const timestamp = entry.timestamp;
     if (!timestamp) continue;
 
-    const _d = new Date(timestamp);
-    const date = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
+    const localMs = new Date(timestamp).getTime() - tzOffset * 60 * 1000;
+    const _d = new Date(localMs);
+    const date = `${_d.getUTCFullYear()}-${String(_d.getUTCMonth()+1).padStart(2,'0')}-${String(_d.getUTCDate()).padStart(2,'0')}`;
     if (startDate && date < startDate) continue;
     if (endDate && date > endDate) continue;
 
     const costs = calculateCost(usage, model);
     const hour = new Date(timestamp).getUTCHours();
+    // Count tool_use blocks in this assistant message
+    const toolCallCount = Array.isArray(entry.message.content)
+      ? entry.message.content.filter(c => c.type === 'tool_use').length : 0;
     const inp = usage.input_tokens || 0;
     const out = usage.output_tokens || 0;
     const cw = usage.cache_creation_input_tokens || 0;
@@ -198,9 +204,10 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
         sessionId, projectName, filePath,
         cost: 0, inputTokens: 0, outputTokens: 0,
         cacheWrite: 0, cacheRead: 0, totalTokens: 0,
-        messages: 0, firstTimestamp: null, lastTimestamp: null,
+        messages: 0, toolCalls: 0, firstTimestamp: null, lastTimestamp: null,
         models: new Set(),
         firstPrompt: sessionFirstPrompt.get(sessionId) || '',
+        totalPrompts: sessionPromptCount.get(sessionId) || 0,
         client: sessionClientMap.get(sessionId) || 'Terminal CLI',
       });
     }
@@ -212,6 +219,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     sess.cacheRead += cr;
     sess.totalTokens += total;
     sess.messages++;
+    sess.toolCalls += toolCallCount;
     if (model) sess.models.add(model);
     if (!sess.firstTimestamp || timestamp < sess.firstTimestamp) sess.firstTimestamp = timestamp;
     if (!sess.lastTimestamp || timestamp > sess.lastTimestamp) sess.lastTimestamp = timestamp;
@@ -228,7 +236,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
 
     // Model
     const modelKey = model || 'unknown';
-    if (!modelMap[modelKey]) modelMap[modelKey] = { cost: 0, inputTokens: 0, outputTokens: 0, cacheWrite: 0, cacheRead: 0, messages: 0, totalTokens: 0 };
+    if (!modelMap[modelKey]) modelMap[modelKey] = { cost: 0, inputTokens: 0, outputTokens: 0, cacheWrite: 0, cacheRead: 0, messages: 0, totalTokens: 0, sessions: new Set(), prompts: 0, toolCalls: 0 };
     modelMap[modelKey].cost += costs.total;
     modelMap[modelKey].inputTokens += inp;
     modelMap[modelKey].outputTokens += out;
@@ -236,13 +244,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     modelMap[modelKey].cacheRead += cr;
     modelMap[modelKey].messages++;
     modelMap[modelKey].totalTokens += total;
-
-    // Hourly
-    if (!hourlyMap[hour]) hourlyMap[hour] = { cost: 0, messages: 0 };
-    hourlyMap[hour].cost += costs.total;
-    hourlyMap[hour].messages++;
-
-    // Resolve user prompt for this assistant entry
+    // Resolve user prompt for this assistant entry (needed for model prompt count)
     const parentUserEntry = userByUuid.get(entry.parentUuid) || userByUuid.get(entry.uuid);
     let promptSnippet = '';
     let isAutomated = false;
@@ -257,12 +259,20 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
       }
     }
 
+    modelMap[modelKey].sessions.add(sessionId);
+    modelMap[modelKey].toolCalls += toolCallCount;
+    if (!isAutomated && promptSnippet) modelMap[modelKey].prompts++;
+
+    // Hourly
+    if (!hourlyMap[hour]) hourlyMap[hour] = { cost: 0, messages: 0 };
+    hourlyMap[hour].cost += costs.total;
+    hourlyMap[hour].messages++;
+
     allMessages.push({
       sessionId, projectName, timestamp, model: modelKey,
       cost: costs.total, inputTokens: inp, outputTokens: out,
       cacheWrite: cw, cacheRead: cr, totalTokens: total,
-      prompt: promptSnippet,
-      isAutomated,
+      prompt: promptSnippet, isAutomated, toolCalls: toolCallCount,
     });
   }
 
@@ -275,10 +285,10 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   const totalAllTokens = totalInputTokens + totalCacheWrite + totalCacheRead + totalOutputTokens;
   const cacheHitRate = totalAllTokens > 0 ? Math.round((totalCacheRead / totalAllTokens) * 100) : 0;
 
-  // Top 20 by total tokens — real user queries first, then automated
-  const topMessagesByTokens = [
-    ...[...allMessages].filter(m => !m.isAutomated).sort((a, b) => b.totalTokens - a.totalTokens),
-    ...[...allMessages].filter(m => m.isAutomated).sort((a, b) => b.totalTokens - a.totalTokens),
+  // Top 20 by cost — real user queries first, then automated
+  const topMessagesByCost = [
+    ...[...allMessages].filter(m => !m.isAutomated).sort((a, b) => b.cost - a.cost),
+    ...[...allMessages].filter(m => m.isAutomated).sort((a, b) => b.cost - a.cost),
   ].slice(0, 20);
 
   const dailySeries = Object.entries(dailyMap)
@@ -287,7 +297,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
 
   const modelBreakdown = Object.entries(modelMap)
     .sort(([, a], [, b]) => b.cost - a.cost)
-    .map(([model, d]) => ({ model, ...d }));
+    .map(([model, d]) => ({ model, ...d, sessions: d.sessions.size }));
 
   // Model queries: ALL messages per model, non-automated sorted first.
   // The API returns them all; the UI paginates with a "Show more" button.
@@ -306,7 +316,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
 
   const insights = generateInsights({
     sessions, dailySeries,
-    topMessages: topMessagesByTokens,
+    topMessages: topMessagesByCost,
     totalCost, totalMessages, totalCacheRead,
     totalCacheReadSavings, cacheHitRate,
     totalAllTokens, totalOutputTokens,
@@ -325,7 +335,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     modelBreakdown,
     modelQueries,
     hourlySeries,
-    topMessages: topMessagesByTokens,
+    topMessages: topMessagesByCost,
     insights,
   };
 }
@@ -368,8 +378,7 @@ function getSessionDetail(filePath) {
         model: null,
         inputTokens: 0, outputTokens: 0,
         cacheWrite: 0, cacheRead: 0, totalTokens: 0,
-        cost: 0,
-        apiCalls: 0,
+        cost: 0, apiCalls: 0, toolCalls: 0,
       };
     } else if (entry.type === 'assistant' && entry.message?.usage && currentTurn) {
       // Only count deduplicated entries
@@ -383,6 +392,8 @@ function getSessionDetail(filePath) {
       const cr = u.cache_read_input_tokens || 0;
       const costs = calculateCost(u, entry.message.model);
 
+      const turnToolCalls = Array.isArray(entry.message.content)
+        ? entry.message.content.filter(c => c.type === 'tool_use').length : 0;
       currentTurn.inputTokens += inp;
       currentTurn.outputTokens += out;
       currentTurn.cacheWrite += cw;
@@ -390,6 +401,7 @@ function getSessionDetail(filePath) {
       currentTurn.totalTokens += inp + cw + cr + out;
       currentTurn.cost += costs.total;
       currentTurn.apiCalls++;
+      currentTurn.toolCalls += turnToolCalls;
       if (entry.message.model) currentTurn.model = entry.message.model;
     }
   }
