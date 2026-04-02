@@ -300,18 +300,21 @@ function renderTopMessages(messages) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">💬</div><h3>No messages yet</h3></div>`;
     return;
   }
-  container.innerHTML = messages.map((m, i) => `
-    <div class="message-card">
+  container.innerHTML = messages.map((m, i) => {
+    const isAuto = m.isAutomated;
+    return `
+    <div class="message-card${isAuto ? ' automated' : ''}">
       <div class="message-rank">
         <span>#${i + 1} · ${fmtDateTime(m.timestamp)}</span>
         <div class="message-badges">
+          ${isAuto ? '<span class="auto-badge">Auto</span>' : ''}
           <span class="message-tokens-badge">${fmtTokens(m.totalTokens)} total tokens</span>
           <span class="message-cost-badge">${fmt$(m.cost)}</span>
         </div>
       </div>
       ${m.prompt
-        ? `<div class="message-prompt">${escapeHtml(m.prompt)}${m.prompt.length >= 200 ? '…' : ''}</div>`
-        : `<div class="message-prompt empty">[ No user prompt captured — tool call or continuation ]</div>`
+        ? `<div class="message-prompt ${isAuto ? 'muted' : ''}">${escapeHtml(m.prompt)}${(!isAuto && m.prompt.length >= 200) ? '…' : ''}</div>`
+        : `<div class="message-prompt muted">[ No user prompt — tool call or continuation ]</div>`
       }
       <div class="message-meta">
         <span><span class="meta-label">Model:</span> <span class="model-pill ${modelClass(m.model)}">${shortModelName(m.model)}</span></span>
@@ -320,7 +323,8 @@ function renderTopMessages(messages) {
         <span><span class="meta-label">Output:</span> ${fmtTokens(m.outputTokens)}</span>
         <span><span class="meta-label">Project:</span> <span style="color:var(--text-muted)">${escapeHtml(m.projectName)}</span></span>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 // ===== Model chart =====
@@ -378,48 +382,79 @@ function renderModelTable(breakdown, totalCost) {
 }
 
 // ===== Model queries =====
+const MODEL_QUERIES_PAGE_SIZE = 25;
+const modelQueriesPage = {};   // model -> current page index (0-based)
+
 function renderModelQueries(modelBreakdown, modelQueries) {
   const tabRow = document.getElementById('model-queries-tabs');
   const content = document.getElementById('model-queries-content');
   if (!modelBreakdown || modelBreakdown.length === 0) { tabRow.innerHTML = ''; content.innerHTML = ''; return; }
 
-  // Build tabs
+  // Tabs show the TRUE count from modelBreakdown (not the array length)
   tabRow.innerHTML = modelBreakdown.map((m, i) =>
-    `<button class="tab-btn${i === 0 ? ' active' : ''}" data-model="${escapeHtml(m.model)}">${shortModelName(m.model)} <span style="font-size:0.72rem;opacity:0.7">(${(modelQueries[m.model] || []).length})</span></button>`
+    `<button class="tab-btn${i === 0 ? ' active' : ''}" data-model="${escapeHtml(m.model)}">
+       <span class="model-dot ${modelDotClass(m.model)}" style="margin-right:4px"></span>
+       ${shortModelName(m.model)}
+       <span class="tab-count">${m.messages.toLocaleString()}</span>
+     </button>`
   ).join('');
 
-  const showTab = (model) => {
+  const showTab = (model, page = 0) => {
     tabRow.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.model === model));
-    const msgs = modelQueries[model] || [];
-    if (!msgs.length) { content.innerHTML = '<p style="color:var(--text-muted);padding:12px 0">No queries recorded for this model.</p>'; return; }
-    content.innerHTML = msgs.map((m, i) => `
-      <div class="message-card">
-        <div class="message-rank">
-          <span>#${i + 1} · ${fmtDateTime(m.timestamp)}</span>
-          <div class="message-badges">
-            <span class="message-tokens-badge">${fmtTokens(m.totalTokens)} tokens</span>
-            <span class="message-cost-badge">${fmt$(m.cost)}</span>
+    modelQueriesPage[model] = page;
+    const all = modelQueries[model] || [];
+    if (!all.length) {
+      content.innerHTML = '<p style="color:var(--text-muted);padding:12px 0">No queries recorded for this model.</p>';
+      return;
+    }
+    const start = page * MODEL_QUERIES_PAGE_SIZE;
+    const slice = all.slice(start, start + MODEL_QUERIES_PAGE_SIZE);
+    const hasMore = start + MODEL_QUERIES_PAGE_SIZE < all.length;
+    const hasPrev = page > 0;
+
+    content.innerHTML = slice.map((m, i) => {
+      const rank = start + i + 1;
+      const isAuto = m.isAutomated;
+      return `
+        <div class="message-card${isAuto ? ' automated' : ''}">
+          <div class="message-rank">
+            <span>#${rank} · ${fmtDateTime(m.timestamp)}</span>
+            <div class="message-badges">
+              ${isAuto ? '<span class="auto-badge">Auto</span>' : ''}
+              <span class="message-tokens-badge">${fmtTokens(m.totalTokens)} tokens</span>
+              <span class="message-cost-badge">${fmt$(m.cost)}</span>
+            </div>
           </div>
-        </div>
-        ${m.prompt
-          ? `<div class="message-prompt">${escapeHtml(m.prompt)}${m.prompt.length >= 200 ? '…' : ''}</div>`
-          : `<div class="message-prompt empty">[ Tool call / no user prompt ]</div>`
-        }
-        <div class="message-meta">
-          <span><span class="meta-label">Input:</span> ${fmtTokens(m.inputTokens)}</span>
-          <span><span class="meta-label">Cache R:</span> ${fmtTokens(m.cacheRead)}</span>
-          <span><span class="meta-label">Output:</span> ${fmtTokens(m.outputTokens)}</span>
-          <span><span class="meta-label">Project:</span> ${escapeHtml(m.projectName)}</span>
-        </div>
-      </div>`).join('');
+          <div class="message-prompt ${!m.prompt || isAuto ? 'muted' : ''}">${m.prompt ? escapeHtml(m.prompt) + (m.prompt.length >= 200 ? '…' : '') : '[ Tool call / no user prompt ]'}</div>
+          <div class="message-meta">
+            <span><span class="meta-label">Input:</span> ${fmtTokens(m.inputTokens)}</span>
+            <span><span class="meta-label">Cache R:</span> ${fmtTokens(m.cacheRead)}</span>
+            <span><span class="meta-label">Output:</span> ${fmtTokens(m.outputTokens)}</span>
+            <span><span class="meta-label">Project:</span> ${escapeHtml(m.projectName)}</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    // Pagination row
+    const paginationEl = document.createElement('div');
+    paginationEl.className = 'pagination-row';
+    paginationEl.innerHTML = `
+      <span class="pagination-info">Showing ${start + 1}–${Math.min(start + MODEL_QUERIES_PAGE_SIZE, all.length)} of ${all.length.toLocaleString()}</span>
+      <div class="pagination-btns">
+        ${hasPrev ? `<button class="page-btn" data-page="${page - 1}">← Prev</button>` : ''}
+        ${hasMore ? `<button class="page-btn" data-page="${page + 1}">Next →</button>` : ''}
+      </div>`;
+    content.appendChild(paginationEl);
+    paginationEl.querySelectorAll('.page-btn').forEach(btn => {
+      btn.addEventListener('click', () => showTab(model, parseInt(btn.dataset.page)));
+    });
   };
 
-  // Set default tab
   const firstModel = modelBreakdown[0]?.model;
-  if (firstModel) { activeModelTab = firstModel; showTab(firstModel); }
+  if (firstModel) { activeModelTab = firstModel; showTab(firstModel, 0); }
 
   tabRow.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => { activeModelTab = btn.dataset.model; showTab(activeModelTab); });
+    btn.addEventListener('click', () => { activeModelTab = btn.dataset.model; showTab(activeModelTab, 0); });
   });
 }
 
