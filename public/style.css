@@ -685,6 +685,10 @@ body.compact-mode .main-content { padding: 20px 24px; }
 .stat-card.warn { border-color: rgba(245,158,11,0.35); background: var(--amber-bg); }
 .stat-card.warn .stat-value { color: var(--amber); }
 .stats-grid-2 { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.stats-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.stats-grid-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1100px) { .stats-grid-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px)  { .stats-grid-3 { grid-template-columns: repeat(2, 1fr); } }
 
 /* ===== Trend indicators ===== */
 .trend-indicator {

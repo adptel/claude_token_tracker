@@ -22,6 +22,48 @@ let filterCostMax = null;
 let prevSummary = null;
 // 5h window countdown timer handle
 let windowCountdownInterval = null;
+// In-memory budget amount (localStorage may be unavailable in some contexts)
+let _budgetAmount = 0;
+
+// ===== Global budget functions (called via onclick= in HTML) =====
+window.applyBudget = function() {
+  const input = document.getElementById('budget-input');
+  if (!input) return;
+  const num = parseFloat(input.value);
+  if (!isNaN(num) && num > 0) {
+    _budgetAmount = num;
+    try { localStorage.setItem('budget', String(num)); } catch(e) {}
+  } else {
+    _budgetAmount = 0;
+    try { localStorage.removeItem('budget'); } catch(e) {}
+  }
+  _renderBudgetDisplay();
+  const msg = document.getElementById('budget-saved-msg');
+  if (msg) { msg.style.display = 'block'; setTimeout(() => { msg.style.display = 'none'; }, 2500); }
+};
+
+window.clearBudget = function() {
+  _budgetAmount = 0;
+  try { localStorage.removeItem('budget'); } catch(e) {}
+  const input = document.getElementById('budget-input');
+  if (input) input.value = '';
+  _renderBudgetDisplay();
+};
+
+function _renderBudgetDisplay() {
+  const totalCost = analyticsData?.summary?.totalCost || 0;
+  const card = document.getElementById('budget-alert-card');
+  const status = document.getElementById('budget-status');
+  if (!card || !status) return;
+  if (_budgetAmount > 0) {
+    const pct = Math.round(totalCost / _budgetAmount * 100);
+    status.textContent = `${fmt$(totalCost)} / ${fmt$(_budgetAmount)}`;
+    card.className = `stat-card${pct >= 90 ? ' red' : pct >= 70 ? ' warn' : ''}`;
+  } else {
+    status.textContent = 'Not set';
+    card.className = 'stat-card';
+  }
+}
 
 // ===== Formatting helpers =====
 function fmt$(n) {
@@ -161,21 +203,13 @@ function renderSummaryCards(s) {
     document.getElementById('forecast-sub').textContent = `${fmt$(s.avgDailySpend)}/day avg (last 7d)`;
   }
 
-  // Budget alert
-  const budgetVal = parseFloat(localStorage.getItem('budget') || '0');
+  // Budget alert — delegate to standalone renderer
+  _renderBudgetDisplay();
+
+  // Pre-fill input from stored value if not already filled
   const budgetInput = document.getElementById('budget-input');
-  // Only pre-fill if the user hasn't typed anything yet
-  if (!budgetInput.dataset.dirty && !budgetInput.value) {
-    const stored = localStorage.getItem('budget');
-    if (stored && stored !== '0') budgetInput.value = stored;
-  }
-  if (budgetVal > 0) {
-    const pct = Math.round(s.totalCost / budgetVal * 100);
-    document.getElementById('budget-status').textContent = `${fmt$(s.totalCost)} / ${fmt$(budgetVal)}`;
-    document.getElementById('budget-alert-card').className = `stat-card ${pct >= 90 ? 'red' : pct >= 70 ? 'warn' : ''}`;
-  } else {
-    document.getElementById('budget-status').textContent = 'Not set';
-    document.getElementById('budget-alert-card').className = 'stat-card';
+  if (budgetInput && !budgetInput.value && _budgetAmount > 0) {
+    budgetInput.value = String(_budgetAmount);
   }
 
   // Cache efficiency score
@@ -913,40 +947,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     localStorage.setItem('compact', isCompact ? '1' : '0');
   });
 
-  // Budget input
+  // Budget — init from localStorage and wire Enter key
+  try { const s = localStorage.getItem('budget'); if (s) _budgetAmount = parseFloat(s) || 0; } catch(e) {}
   const budgetInputEl = document.getElementById('budget-input');
-  const budgetSavedMsg = document.getElementById('budget-saved-msg');
-  let budgetSaveTimer = null;
-
-  const applyBudget = () => {
-    const val = budgetInputEl.value.trim();
-    const num = parseFloat(val);
-    if (val && !isNaN(num) && num > 0) {
-      localStorage.setItem('budget', String(num));
-    } else {
-      localStorage.removeItem('budget');
-    }
-    budgetInputEl.dataset.dirty = '1';
-    if (analyticsData) renderSummaryCards(analyticsData.summary);
-    // Show saved confirmation
-    if (budgetSavedMsg) {
-      budgetSavedMsg.style.display = 'block';
-      clearTimeout(budgetSaveTimer);
-      budgetSaveTimer = setTimeout(() => { budgetSavedMsg.style.display = 'none'; }, 2000);
-    }
-  };
-
-  document.getElementById('budget-set-btn').addEventListener('click', applyBudget);
-  budgetInputEl.addEventListener('keydown', e => { if (e.key === 'Enter') applyBudget(); });
-  // Also save on change (after user stops typing)
-  budgetInputEl.addEventListener('change', applyBudget);
-  document.getElementById('budget-clear-btn').addEventListener('click', () => {
-    localStorage.removeItem('budget');
-    budgetInputEl.value = '';
-    budgetInputEl.dataset.dirty = '1';
-    if (budgetSavedMsg) budgetSavedMsg.style.display = 'none';
-    if (analyticsData) renderSummaryCards(analyticsData.summary);
-  });
+  if (budgetInputEl) {
+    if (_budgetAmount > 0) budgetInputEl.value = String(_budgetAmount);
+    budgetInputEl.addEventListener('keydown', e => { if (e.key === 'Enter') window.applyBudget(); });
+  }
 
   // Session filters
   const refilter = () => renderSessionsTable(allSessions, document.getElementById('sessions-search').value);

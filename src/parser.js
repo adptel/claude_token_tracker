@@ -47,6 +47,18 @@ function extractText(content) {
   return '';
 }
 
+/** Strip <ide_selection>…</ide_selection> blocks injected by IDE integrations */
+function cleanIdeSelection(text) {
+  if (!text) return text;
+  // Remove complete <ide_selection>...</ide_selection> blocks (possibly multiline)
+  let t = text.replace(/<ide_selection>[\s\S]*?<\/ide_selection>/gi, '');
+  // Remove any orphan open/close tags
+  t = t.replace(/<\/?ide_selection[^>]*>/gi, '');
+  // Also remove the common "This may or may not be related to the current task" suffix
+  t = t.replace(/\.?\s*This may or may not be related to the current task\.?/gi, '');
+  return t.replace(/\s+/g, ' ').trim();
+}
+
 /**
  * Maps the `entrypoint` field to a human-readable client label.
  * Known values observed in Claude Code JSONL files.
@@ -127,7 +139,8 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
 
       if (isUserTextMessage(entry)) {
         userByUuid.set(entry.uuid, entry);
-        const text = extractText(entry.message.content).replace(/\s+/g, ' ').trim();
+        const rawText = extractText(entry.message.content).replace(/\s+/g, ' ').trim();
+        const text = cleanIdeSelection(rawText);
         if (text && !automationLabel(text)) {
           // Count real user prompts per session
           sessionPromptCount.set(sessionId, (sessionPromptCount.get(sessionId) || 0) + 1);
@@ -255,7 +268,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     let promptSnippet = '';
     let isAutomated = false;
     if (parentUserEntry?.message?.content) {
-      const raw = extractText(parentUserEntry.message.content).replace(/\s+/g, ' ').trim();
+      const raw = cleanIdeSelection(extractText(parentUserEntry.message.content).replace(/\s+/g, ' ').trim());
       const label = automationLabel(raw);
       if (label) {
         promptSnippet = label;
@@ -460,7 +473,7 @@ function getSessionDetail(filePath) {
       if (currentTurn) turns.push(currentTurn);
       currentTurn = {
         turnNumber: turns.length + 1,
-        userPrompt: extractText(entry.message.content).slice(0, 400).replace(/\s+/g, ' ').trim(),
+        userPrompt: cleanIdeSelection(extractText(entry.message.content).replace(/\s+/g, ' ').trim()).slice(0, 400),
         timestamp: entry.timestamp,
         model: null,
         inputTokens: 0, outputTokens: 0,

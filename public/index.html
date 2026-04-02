@@ -211,8 +211,8 @@
         </div>
       </div>
 
-      <!-- Second stats row -->
-      <div class="stats-grid stats-grid-2">
+      <!-- Stats row 2: efficiency metrics -->
+      <div class="stats-grid stats-grid-4">
         <div class="stat-card">
           <div class="stat-label">Cost / Message</div>
           <div class="stat-value" id="cost-per-msg">$0.00</div>
@@ -233,21 +233,20 @@
           <div class="stat-value" id="zero-cache-count">0</div>
           <div class="stat-sub">sessions with no cache hits</div>
         </div>
+      </div>
+
+      <!-- Stats row 3: budget + window + cache efficiency -->
+      <div class="stats-grid stats-grid-3">
         <div class="stat-card" id="budget-alert-card">
           <div class="stat-label">Monthly Budget</div>
-          <div class="stat-value" id="budget-status">—</div>
-          <div class="stat-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px">
+          <div class="stat-value" id="budget-status">Not set</div>
+          <div class="stat-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <input type="number" id="budget-input" placeholder="e.g. 100" min="0" step="1"
               style="width:90px;background:var(--bg3);border:1px solid var(--border-md);border-radius:4px;color:var(--text);font-size:0.78rem;padding:4px 8px;outline:none" />
-            <button id="budget-set-btn" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">Set</button>
-            <button id="budget-clear-btn" style="background:none;border:1px solid var(--border-md);color:var(--text-dim);border-radius:4px;padding:4px 8px;font-size:0.72rem;cursor:pointer">Clear</button>
+            <button onclick="window.applyBudget()" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:0.75rem;font-weight:600;cursor:pointer">Set</button>
+            <button onclick="window.clearBudget()" style="background:none;border:1px solid var(--border-md);color:var(--text-dim);border-radius:4px;padding:4px 8px;font-size:0.72rem;cursor:pointer">Clear</button>
           </div>
-          <div id="budget-saved-msg" style="display:none;font-size:0.7rem;color:var(--green);margin-top:4px">✓ Saved</div>
-        </div>
-        <div class="stat-card" id="cache-efficiency-card">
-          <div class="stat-label">Cache Efficiency</div>
-          <div class="stat-value" id="cache-efficiency-score">0%</div>
-          <div class="stat-sub">cache reads vs fresh input</div>
+          <div id="budget-saved-msg" style="display:none;font-size:0.7rem;color:#22c55e;margin-top:4px">✓ Budget saved</div>
         </div>
         <div class="stat-card" id="billing-window-card">
           <div class="stat-label">5h Billing Window</div>
@@ -256,6 +255,11 @@
           <div class="window-bar-wrap" style="margin-top:6px">
             <div class="window-bar-track"><div class="window-bar-fill" id="window-bar-fill" style="width:0%"></div></div>
           </div>
+        </div>
+        <div class="stat-card" id="cache-efficiency-card">
+          <div class="stat-label">Cache Efficiency</div>
+          <div class="stat-value" id="cache-efficiency-score">0%</div>
+          <div class="stat-sub">cache reads vs fresh input</div>
         </div>
       </div>
 
