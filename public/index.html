@@ -242,6 +242,20 @@
             <button id="budget-set-btn" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">Set</button>
             <button id="budget-clear-btn" style="background:none;border:1px solid var(--border-md);color:var(--text-dim);border-radius:4px;padding:4px 8px;font-size:0.72rem;cursor:pointer">Clear</button>
           </div>
+          <div id="budget-saved-msg" style="display:none;font-size:0.7rem;color:var(--green);margin-top:4px">✓ Saved</div>
+        </div>
+        <div class="stat-card" id="cache-efficiency-card">
+          <div class="stat-label">Cache Efficiency</div>
+          <div class="stat-value" id="cache-efficiency-score">0%</div>
+          <div class="stat-sub">cache reads vs fresh input</div>
+        </div>
+        <div class="stat-card" id="billing-window-card">
+          <div class="stat-label">5h Billing Window</div>
+          <div class="stat-value" id="window-cost">$0.00</div>
+          <div class="stat-sub"><span id="window-messages-count">0 msg</span> · resets in <span id="window-countdown" style="font-family:'JetBrains Mono',monospace;color:var(--accent)">—</span></div>
+          <div class="window-bar-wrap" style="margin-top:6px">
+            <div class="window-bar-track"><div class="window-bar-fill" id="window-bar-fill" style="width:0%"></div></div>
+          </div>
         </div>
       </div>
 
@@ -264,6 +278,15 @@
           <p class="chart-sub">When you use Claude the most</p>
         </div>
         <div class="chart-wrap" style="height:180px"><canvas id="hourly-chart"></canvas></div>
+      </div>
+
+      <!-- Rate limit events -->
+      <div class="chart-card" id="rate-limit-section" style="display:none">
+        <div class="chart-header">
+          <h2>Session Pause Events</h2>
+          <p class="chart-sub">Gaps &gt;20 min within a session — possible rate limiting, long thinking, or manual pauses</p>
+        </div>
+        <div id="rate-limit-list" class="rate-limit-list"></div>
       </div>
     </section>
 

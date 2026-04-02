@@ -684,7 +684,54 @@ body.compact-mode .main-content { padding: 20px 24px; }
 .stat-card.red .stat-value { color: var(--red); }
 .stat-card.warn { border-color: rgba(245,158,11,0.35); background: var(--amber-bg); }
 .stat-card.warn .stat-value { color: var(--amber); }
-.stats-grid-2 { grid-template-columns: repeat(4, 1fr); }
+.stats-grid-2 { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+
+/* ===== Trend indicators ===== */
+.trend-indicator {
+  font-size: 0.7rem; font-weight: 600; margin-left: 6px;
+  font-family: 'JetBrains Mono', monospace; vertical-align: middle;
+}
+
+/* ===== Rate limit events ===== */
+.rate-limit-list { display: flex; flex-direction: column; gap: 8px; }
+.rate-limit-row {
+  display: flex; align-items: center; gap: 12px; padding: 8px 12px;
+  background: var(--bg3); border-radius: var(--r-sm); border: 1px solid var(--border);
+}
+.rate-limit-gap {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.82rem;
+  color: var(--amber); font-weight: 600; min-width: 60px;
+}
+.rate-limit-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.rate-limit-project { font-size: 0.8rem; font-weight: 500; color: var(--text); }
+.rate-limit-ts { font-size: 0.72rem; color: var(--text-dim); }
+.rate-limit-bar {
+  height: 4px; border-radius: 2px; background: var(--amber); opacity: 0.6;
+}
+
+/* ===== 5h billing window bar ===== */
+.window-bar-wrap { margin-top: 6px; }
+.window-bar-track {
+  height: 4px; background: var(--bg4); border-radius: 2px; overflow: hidden;
+}
+.window-bar-fill {
+  height: 100%; background: linear-gradient(90deg, #22c55e, #f59e0b);
+  border-radius: 2px; transition: width 1s linear;
+}
+
+/* ===== Token density / bloat badges ===== */
+.bloat-badge {
+  display: inline-flex; align-items: center; gap: 3px; font-size: 0.65rem;
+  font-weight: 700; padding: 2px 6px; border-radius: 4px;
+  background: rgba(220,38,38,0.1); color: #ef4444; border: 1px solid rgba(220,38,38,0.25);
+  margin-left: 4px;
+}
+.density-badge {
+  display: inline-flex; align-items: center; font-size: 0.65rem;
+  font-weight: 600; padding: 2px 6px; border-radius: 4px;
+  background: rgba(245,158,11,0.1); color: var(--amber); border: 1px solid rgba(245,158,11,0.25);
+  margin-left: 4px; font-family: 'JetBrains Mono', monospace;
+}
 
 /* ===== Export buttons ===== */
 .export-btn {
