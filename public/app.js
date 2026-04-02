@@ -124,7 +124,10 @@ function renderDailyChart(series) {
   dailyChart = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: series.map(d => d.date),
+      labels: series.map(d => {
+        const [y, m, day] = d.date.split('-');
+        return `${m}/${day}`;
+      }),
       datasets: [
         { label:'Cost ($)', data: series.map(d => d.cost), backgroundColor:'rgba(217,119,6,0.7)', borderColor:'#d97706', borderWidth:1, borderRadius:4, yAxisID:'y' },
         { label:'Output Tokens', data: series.map(d => d.outputTokens), type:'line', borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderWidth:2, pointRadius:3, pointBackgroundColor:'#3b82f6', tension:0.3, fill:true, yAxisID:'y2' },
@@ -314,7 +317,13 @@ function renderTopMessages(messages) {
       </div>
       ${m.prompt
         ? `<div class="message-prompt ${isAuto ? 'muted' : ''}">${escapeHtml(m.prompt)}${(!isAuto && m.prompt.length >= 200) ? '…' : ''}</div>`
-        : `<div class="message-prompt muted">[ No user prompt — tool call or continuation ]</div>`
+        : `<div class="no-prompt-wrap">
+             <div class="no-prompt-label">No user message in this turn</div>
+             <div class="no-prompt-chips">
+               <span class="type-chip tc-tool">⚙ Tool result</span>
+               <span class="type-chip tc-cont">↩ Auto-continuation</span>
+             </div>
+           </div>`
       }
       <div class="message-meta">
         <span><span class="meta-label">Model:</span> <span class="model-pill ${modelClass(m.model)}">${shortModelName(m.model)}</span></span>
@@ -425,7 +434,16 @@ function renderModelQueries(modelBreakdown, modelQueries) {
               <span class="message-cost-badge">${fmt$(m.cost)}</span>
             </div>
           </div>
-          <div class="message-prompt ${!m.prompt || isAuto ? 'muted' : ''}">${m.prompt ? escapeHtml(m.prompt) + (m.prompt.length >= 200 ? '…' : '') : '[ Tool call / no user prompt ]'}</div>
+          ${m.prompt
+            ? `<div class="message-prompt ${isAuto ? 'muted' : ''}">${escapeHtml(m.prompt)}${(m.prompt.length >= 200 ? '…' : '')}</div>`
+            : `<div class="no-prompt-wrap">
+                 <div class="no-prompt-label">No user message in this turn</div>
+                 <div class="no-prompt-chips">
+                   <span class="type-chip tc-tool">⚙ Tool result</span>
+                   <span class="type-chip tc-cont">↩ Auto-continuation</span>
+                 </div>
+               </div>`
+          }
           <div class="message-meta">
             <span><span class="meta-label">Input:</span> ${fmtTokens(m.inputTokens)}</span>
             <span><span class="meta-label">Cache R:</span> ${fmtTokens(m.cacheRead)}</span>

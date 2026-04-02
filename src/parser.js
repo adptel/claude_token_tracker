@@ -171,7 +171,8 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     const timestamp = entry.timestamp;
     if (!timestamp) continue;
 
-    const date = timestamp.slice(0, 10);
+    const _d = new Date(timestamp);
+    const date = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
     if (startDate && date < startDate) continue;
     if (endDate && date > endDate) continue;
 
