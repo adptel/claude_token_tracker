@@ -70,12 +70,20 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 2v6l4 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Models
       </a>
+      <a href="#" class="nav-item" data-section="projects">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 3h5l1.5 2H14v8H2V3z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/></svg>
+        Projects
+      </a>
       <a href="#" class="nav-item" data-section="insights">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1l1.8 4h4.2l-3.4 2.5 1.3 4L8 9l-3.9 2.5 1.3-4L2 5h4.2L8 1z" fill="currentColor"/></svg>
         Insights
       </a>
     </nav>
     <div class="sidebar-footer">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button class="theme-btn" id="theme-toggle" title="Toggle dark/light mode">🌙</button>
+        <button class="theme-btn" id="compact-toggle" title="Toggle compact mode">⊟</button>
+      </div>
       <button id="refresh-btn" class="refresh-btn">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 7A5 5 0 112 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 4v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Refresh
@@ -203,6 +211,35 @@
         </div>
       </div>
 
+      <!-- Second stats row -->
+      <div class="stats-grid stats-grid-2">
+        <div class="stat-card">
+          <div class="stat-label">Cost / Message</div>
+          <div class="stat-value" id="cost-per-msg">$0.00</div>
+          <div class="stat-sub">avg per API call</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg Tokens / Session</div>
+          <div class="stat-value" id="avg-tokens-session">0</div>
+          <div class="stat-sub">across all sessions</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">30-Day Forecast</div>
+          <div class="stat-value" id="forecast-30d">$0.00</div>
+          <div class="stat-sub" id="forecast-sub">based on last 7d avg</div>
+        </div>
+        <div class="stat-card" id="zero-cache-card">
+          <div class="stat-label">Zero Cache Sessions</div>
+          <div class="stat-value" id="zero-cache-count">0</div>
+          <div class="stat-sub">sessions with no cache hits</div>
+        </div>
+        <div class="stat-card" id="budget-alert-card" style="grid-column:span 4">
+          <div class="stat-label">Budget</div>
+          <div class="stat-value" id="budget-status">—</div>
+          <div class="stat-sub"><input type="number" id="budget-input" placeholder="Set monthly budget $" style="width:140px;background:transparent;border:none;border-bottom:1px solid var(--border-md);color:var(--text-muted);font-size:0.72rem;outline:none;padding:2px 0" /></div>
+        </div>
+      </div>
+
       <!-- Daily chart -->
       <div class="chart-card">
         <div class="chart-header">
@@ -231,15 +268,35 @@
         <h1>Sessions</h1>
         <p class="section-desc">All conversations ranked by cost — click any row to see every turn</p>
       </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;justify-content:flex-end">
+        <button onclick="exportData('csv')" class="export-btn">⬇ Export CSV</button>
+        <button onclick="exportData('json')" class="export-btn">⬇ Export JSON</button>
+      </div>
       <div class="search-bar-row">
         <input type="text" id="sessions-search" class="search-input" placeholder="Search projects or prompts…" />
         <span class="session-count-label" id="sessions-count"></span>
+      </div>
+      <div class="filter-row" id="sessions-filters">
+        <select id="filter-model" class="filter-select">
+          <option value="">All models</option>
+        </select>
+        <select id="filter-client" class="filter-select">
+          <option value="">All clients</option>
+        </select>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:0.75rem;color:var(--text-dim)">Cost:</span>
+          <input type="number" id="filter-cost-min" class="filter-input" placeholder="Min $" step="0.01" />
+          <span style="color:var(--text-dim)">–</span>
+          <input type="number" id="filter-cost-max" class="filter-input" placeholder="Max $" step="0.01" />
+        </div>
+        <button id="filter-clear-btn" class="filter-clear-btn">Clear filters</button>
       </div>
       <div class="table-card">
         <table class="data-table" id="sessions-table">
           <thead>
             <tr>
               <th>Date</th>
+              <th>Duration</th>
               <th>First Prompt</th>
               <th>Client</th>
               <th>Model</th>
@@ -300,6 +357,30 @@
         <h2 style="font-size:1rem;font-weight:600;margin-bottom:16px;color:var(--text)">Queries by Model</h2>
         <div id="model-queries-tabs" class="tab-row"></div>
         <div id="model-queries-content" class="messages-list" style="margin-top:16px"></div>
+      </div>
+    </section>
+
+    <!-- ===== PROJECTS ===== -->
+    <section id="projects" class="section" style="display:none">
+      <div class="section-header">
+        <h1>Projects</h1>
+        <p class="section-desc">Cost and usage grouped by project directory</p>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Sessions</th>
+              <th>Messages</th>
+              <th>Tool Calls</th>
+              <th>Total Tokens</th>
+              <th class="right">Cost</th>
+              <th class="right">% of Total</th>
+            </tr>
+          </thead>
+          <tbody id="projects-tbody"></tbody>
+        </table>
       </div>
     </section>
 

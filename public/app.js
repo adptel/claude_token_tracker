@@ -12,6 +12,12 @@ let customEnd = null;
 let activeModelTab = null;
 let allSessions = [];          // cached for search filtering
 
+// Filter state
+let filterModel = '';
+let filterClient = '';
+let filterCostMin = null;
+let filterCostMax = null;
+
 // ===== Formatting helpers =====
 function fmt$(n) {
   if (!n || n < 0.0001) return '$0.00';
@@ -91,6 +97,13 @@ function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function fmtDuration(ms) {
+  if (!ms || ms < 60000) return '<1m';
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 // ===== Chart defaults =====
 Chart.defaults.color = '#5c6080';
 Chart.defaults.borderColor = '#dde0ef';
@@ -116,6 +129,29 @@ function renderSummaryCards(s) {
     `${fmtTokens(s.totalInputTokens)} in · ${fmtTokens(s.totalCacheWrite)} cache w · ${fmtTokens(s.totalOutputTokens)} out`;
   document.getElementById('cache-read-sub').textContent = `${fmtTokens(s.totalCacheRead)} tokens from cache`;
   document.getElementById('total-sessions-sub').textContent = `${s.totalSessions} sessions · ${s.totalProjects} projects`;
+
+  // New stat cards
+  document.getElementById('cost-per-msg').textContent = fmt$(s.costPerMessage);
+  document.getElementById('avg-tokens-session').textContent = fmtTokens(s.avgTokensPerSession);
+  document.getElementById('zero-cache-count').textContent = s.zeroCacheSessions;
+
+  // Forecast
+  if (s.forecast30d !== undefined) {
+    document.getElementById('forecast-30d').textContent = fmt$(s.forecast30d);
+    document.getElementById('forecast-sub').textContent = `${fmt$(s.avgDailySpend)}/day avg (last 7d)`;
+  }
+
+  // Budget alert
+  const budgetVal = parseFloat(localStorage.getItem('budget') || '0');
+  if (budgetVal > 0) {
+    const pct = (s.totalCost / budgetVal * 100).toFixed(0);
+    document.getElementById('budget-status').textContent = `${pct}%`;
+    document.getElementById('budget-alert-card').className = `stat-card ${parseFloat(pct) >= 90 ? 'red' : parseFloat(pct) >= 70 ? 'warn' : ''}`;
+  } else {
+    document.getElementById('budget-status').textContent = 'Not set';
+    document.getElementById('budget-alert-card').className = 'stat-card';
+  }
+  document.getElementById('budget-input').value = localStorage.getItem('budget') || '';
 }
 
 // ===== Daily chart =====
@@ -176,17 +212,21 @@ function renderSessionsTable(sessions, filter = '') {
   let list = sessions;
   if (filter) {
     const q = filter.toLowerCase();
-    list = sessions.filter(s =>
+    list = list.filter(s =>
       s.projectName.toLowerCase().includes(q) ||
       (s.firstPrompt || '').toLowerCase().includes(q) ||
       s.sessionId.toLowerCase().includes(q)
     );
   }
+  if (filterModel) list = list.filter(s => (s.models || []).some(m => m === filterModel));
+  if (filterClient) list = list.filter(s => s.client === filterClient);
+  if (filterCostMin !== null) list = list.filter(s => s.cost >= filterCostMin);
+  if (filterCostMax !== null) list = list.filter(s => s.cost <= filterCostMax);
 
   countLabel.textContent = `${list.length} session${list.length !== 1 ? 's' : ''}`;
 
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="padding:0"><div class="empty-state"><div class="empty-state-icon">📂</div><h3>No sessions found</h3><p>${filter ? 'No matches for "' + escapeHtml(filter) + '"' : 'No Claude Code sessions detected'}</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="padding:0"><div class="empty-state"><div class="empty-state-icon">📂</div><h3>No sessions found</h3><p>${filter ? 'No matches for "' + escapeHtml(filter) + '"' : 'No Claude Code sessions detected'}</p></div></td></tr>`;
     return;
   }
 
@@ -196,15 +236,17 @@ function renderSessionsTable(sessions, filter = '') {
     const barW = Math.round((s.cost / maxCost) * 60);
     const model = (s.models || [])[0] || '';
     const dotCls = modelDotClass(model);
+    const zeroCacheBadge = s.cacheRead === 0 ? '<span style="font-size:0.65rem;background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.25);color:#f87171;border-radius:3px;padding:1px 5px;margin-left:4px">no cache</span>' : '';
     return `
       <tr data-session-id="${escapeHtml(s.sessionId)}" data-first-prompt="${escapeHtml(s.firstPrompt || '')}">
         <td style="white-space:nowrap;color:var(--text-muted);font-size:0.78rem">
           ${fmtShortDate(s.firstTimestamp)}<br>
           <span style="font-size:0.7rem;color:var(--text-dim)">${fmtShortDate(s.lastTimestamp)}</span>
         </td>
+        <td style="font-size:0.75rem;color:var(--text-dim)">${fmtDuration(s.durationMs)}</td>
         <td>
           <div class="first-prompt-cell" title="${escapeHtml(s.firstPrompt || '')}">${escapeHtml(s.firstPrompt || '—')}</div>
-          <div style="margin-top:3px"><span class="project-badge" title="${escapeHtml(s.projectName)}">${escapeHtml(s.projectName)}</span></div>
+          <div style="margin-top:3px"><span class="project-badge" title="${escapeHtml(s.projectName)}">${escapeHtml(s.projectName)}</span>${zeroCacheBadge}</div>
         </td>
         <td>
           <span class="client-badge ${clientBadgeClass(s.client)}" title="${escapeHtml(s.client)}">
@@ -557,11 +599,78 @@ function renderAll(data) {
   renderDailyChart(data.dailySeries);
   renderHourlyChart(data.hourlySeries);
   renderSessionsTable(data.sessions, document.getElementById('sessions-search')?.value || '');
+  populateSessionFilters(data.sessions);
   renderTopMessages(data.topMessages);
   renderModelChart(data.modelBreakdown);
   renderModelTable(data.modelBreakdown, data.summary.totalCost);
   renderModelQueries(data.modelBreakdown, data.modelQueries);
   renderInsights(data.insights);
+  renderProjects(data.projects, data.summary.totalCost);
+}
+
+// ===== Projects =====
+function renderProjects(projects, totalCost) {
+  const tbody = document.getElementById('projects-tbody');
+  if (!tbody) return;
+  if (!projects || !projects.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:20px">No project data</td></tr>';
+    return;
+  }
+  const maxCost = Math.max(...projects.map(p => p.cost), 0.0001);
+  tbody.innerHTML = projects.map(p => {
+    const pct = totalCost > 0 ? ((p.cost / totalCost) * 100).toFixed(1) : '0';
+    const barW = Math.round((p.cost / maxCost) * 80);
+    const modelNames = (p.models || []).map(shortModelName).filter((v,i,a)=>a.indexOf(v)===i).join(', ');
+    return `<tr>
+      <td>
+        <div style="font-weight:600;font-size:0.84rem;color:var(--text)">${escapeHtml(p.name)}</div>
+        ${modelNames ? `<div style="font-size:0.7rem;color:var(--text-dim);margin-top:2px">${escapeHtml(modelNames)}</div>` : ''}
+      </td>
+      <td class="num">${p.sessions}</td>
+      <td class="num">${p.messages.toLocaleString()}</td>
+      <td class="num" style="color:var(--blue)">${(p.toolCalls||0).toLocaleString()}</td>
+      <td class="num">${fmtTokens(p.totalTokens)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
+          <div style="width:${barW}px;height:3px;border-radius:2px;background:var(--gradient)"></div>
+          <span style="font-family:'JetBrains Mono',monospace;color:var(--amber);font-size:0.82rem">${fmt$(p.cost)}</span>
+        </div>
+      </td>
+      <td class="right">
+        <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+          <div style="width:50px;height:4px;border-radius:2px;background:var(--bg4);overflow:hidden">
+            <div style="height:100%;width:${Math.min(100,parseFloat(pct))}%;background:var(--accent)"></div>
+          </div>
+          <span style="font-size:0.78rem;color:var(--text-muted)">${pct}%</span>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ===== Export =====
+function exportData(format) {
+  const params = new URLSearchParams();
+  params.set('format', format || 'json');
+  params.set('tzOffset', new Date().getTimezoneOffset());
+  const { start, end } = getDateRange(activeDateRange);
+  if (start) params.set('start', start);
+  if (end) params.set('end', end);
+  window.location.href = `/api/export?${params.toString()}`;
+}
+
+// ===== Session filters population =====
+function populateSessionFilters(sessions) {
+  const modelSel = document.getElementById('filter-model');
+  const clientSel = document.getElementById('filter-client');
+  if (!modelSel || !clientSel) return;
+  const models = [...new Set(sessions.flatMap(s => s.models || []))].sort();
+  const clients = [...new Set(sessions.map(s => s.client || ''))].filter(Boolean).sort();
+  const prevM = modelSel.value, prevC = clientSel.value;
+  modelSel.innerHTML = '<option value="">All models</option>' +
+    models.map(m => `<option value="${escapeHtml(m)}"${m===prevM?' selected':''}>${shortModelName(m)}</option>`).join('');
+  clientSel.innerHTML = '<option value="">All clients</option>' +
+    clients.map(c => `<option value="${escapeHtml(c)}"${c===prevC?' selected':''}>${escapeHtml(c)}</option>`).join('');
 }
 
 // ===== Navigation =====
@@ -638,6 +747,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isOpen = body.style.display !== 'none';
     body.style.display = isOpen ? 'none' : 'block';
     chevron.classList.toggle('open', !isOpen);
+  });
+
+  // Dark / compact mode
+  if (localStorage.getItem('theme') === 'dark') {
+    document.body.classList.add('dark-mode');
+    document.getElementById('theme-toggle').textContent = '☀️';
+  }
+  if (localStorage.getItem('compact') === '1') document.body.classList.add('compact-mode');
+
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const isDark = document.body.classList.toggle('dark-mode');
+    document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    if (analyticsData) setTimeout(() => { renderDailyChart(analyticsData.dailySeries); renderHourlyChart(analyticsData.hourlySeries); }, 50);
+  });
+  document.getElementById('compact-toggle').addEventListener('click', () => {
+    const isCompact = document.body.classList.toggle('compact-mode');
+    localStorage.setItem('compact', isCompact ? '1' : '0');
+  });
+
+  // Budget input
+  document.getElementById('budget-input').addEventListener('change', e => {
+    localStorage.setItem('budget', e.target.value || '0');
+    if (analyticsData) renderSummaryCards(analyticsData.summary);
+  });
+
+  // Session filters
+  const refilter = () => renderSessionsTable(allSessions, document.getElementById('sessions-search').value);
+  document.getElementById('filter-model').addEventListener('change', e => { filterModel = e.target.value; refilter(); });
+  document.getElementById('filter-client').addEventListener('change', e => { filterClient = e.target.value; refilter(); });
+  document.getElementById('filter-cost-min').addEventListener('input', e => { filterCostMin = e.target.value ? parseFloat(e.target.value) : null; refilter(); });
+  document.getElementById('filter-cost-max').addEventListener('input', e => { filterCostMax = e.target.value ? parseFloat(e.target.value) : null; refilter(); });
+  document.getElementById('filter-clear-btn').addEventListener('click', () => {
+    filterModel = ''; filterClient = ''; filterCostMin = null; filterCostMax = null;
+    ['filter-model','filter-client','filter-cost-min','filter-cost-max'].forEach(id => { document.getElementById(id).value = ''; });
+    refilter();
   });
 
   // Load

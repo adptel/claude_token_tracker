@@ -45,6 +45,33 @@ async function createServer(options = {}) {
     }
   });
 
+  app.get('/api/export', async (req, res) => {
+    try {
+      const opts = {};
+      if (req.query.start) opts.startDate = req.query.start;
+      if (req.query.end) opts.endDate = req.query.end;
+      if (req.query.tzOffset) opts.tzOffset = parseInt(req.query.tzOffset, 10);
+      const data = await buildAnalytics(dataDir, opts);
+      const format = req.query.format || 'json';
+      if (format === 'csv') {
+        const rows = [
+          ['Session ID', 'Project', 'First Prompt', 'Client', 'Prompts', 'Messages', 'Tool Calls', 'Total Tokens', 'Cost'].join(','),
+          ...data.sessions.map(s => [
+            s.sessionId, `"${s.projectName.replace(/"/g, '""')}"`,
+            `"${(s.firstPrompt || '').replace(/"/g, '""')}"`, s.client,
+            s.totalPrompts || 0, s.messages, s.toolCalls || 0, s.totalTokens, s.cost.toFixed(6),
+          ].join(','))
+        ].join('\n');
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="claude-sessions.csv"');
+        res.send(rows);
+      } else {
+        res.setHeader('Content-Disposition', 'attachment; filename="claude-analytics.json"');
+        res.json(data);
+      }
+    } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+  });
+
   app.get('/api/health', (req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
