@@ -64,7 +64,7 @@
       </a>
       <a href="#" class="nav-item" data-section="messages">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13 2H3a1 1 0 00-1 1v7a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V3a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
-        Costly Prompts
+        Costly Messages
       </a>
       <a href="#" class="nav-item" data-section="models">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 2v6l4 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -233,10 +233,15 @@
           <div class="stat-value" id="zero-cache-count">0</div>
           <div class="stat-sub">sessions with no cache hits</div>
         </div>
-        <div class="stat-card" id="budget-alert-card" style="grid-column:span 4">
-          <div class="stat-label">Budget</div>
+        <div class="stat-card" id="budget-alert-card">
+          <div class="stat-label">Monthly Budget</div>
           <div class="stat-value" id="budget-status">—</div>
-          <div class="stat-sub"><input type="number" id="budget-input" placeholder="Set monthly budget $" style="width:140px;background:transparent;border:none;border-bottom:1px solid var(--border-md);color:var(--text-muted);font-size:0.72rem;outline:none;padding:2px 0" /></div>
+          <div class="stat-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px">
+            <input type="number" id="budget-input" placeholder="e.g. 100" min="0" step="1"
+              style="width:90px;background:var(--bg3);border:1px solid var(--border-md);border-radius:4px;color:var(--text);font-size:0.78rem;padding:4px 8px;outline:none" />
+            <button id="budget-set-btn" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">Set</button>
+            <button id="budget-clear-btn" style="background:none;border:1px solid var(--border-md);color:var(--text-dim);border-radius:4px;padding:4px 8px;font-size:0.72rem;cursor:pointer">Clear</button>
+          </div>
         </div>
       </div>
 
@@ -315,8 +320,8 @@
     <!-- ===== COSTLY PROMPTS ===== -->
     <section id="messages" class="section" style="display:none">
       <div class="section-header">
-        <h1>Costly Prompts</h1>
-        <p class="section-desc">Top 20 most expensive individual prompts, ranked by cost</p>
+        <h1>Costly Messages</h1>
+        <p class="section-desc">Top 20 most expensive individual API messages, ranked by cost</p>
       </div>
       <div class="messages-list" id="messages-list"></div>
     </section>

@@ -341,7 +341,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     totalCost, totalMessages, totalCacheRead,
     totalCacheReadSavings, cacheHitRate,
     totalAllTokens, totalOutputTokens,
-    anomalyDays, avgDailyCost,
+    anomalyDays, avgDailyCost, modelBreakdown,
   });
 
   return {
@@ -484,7 +484,7 @@ function fmtTokens(n) {
 
 function generateInsights({ sessions, dailySeries, topMessages, totalCost, totalMessages,
   totalCacheRead, totalCacheReadSavings, cacheHitRate, totalAllTokens, totalOutputTokens,
-  anomalyDays = [], avgDailyCost = 0 }) {
+  anomalyDays = [], avgDailyCost = 0, modelBreakdown = [] }) {
 
   const tips = [];
 
@@ -578,15 +578,16 @@ function generateInsights({ sessions, dailySeries, topMessages, totalCost, total
     });
   }
 
-  // Opus cost optimisation
-  const opusSessions = sessions.filter(s => s.models?.some && s.models.some(m => m.includes('opus')));
-  if (opusSessions.length > 0) {
-    const opusCost = opusSessions.reduce((t, s) => t + s.cost, 0);
+  // Opus cost optimisation — use modelBreakdown for accurate per-model cost
+  const opusEntry = modelBreakdown.find(m => m.model.includes('opus'));
+  if (opusEntry && opusEntry.cost > 0) {
+    const sonnetEntry = modelBreakdown.find(m => m.model.includes('sonnet'));
+    const potentialSaving = opusEntry.cost * 0.8; // ~80% savings switching to Sonnet
     tips.push({
       icon: '💡',
-      title: `${fmt$(opusCost)} spent on Opus — consider Sonnet for routine tasks`,
-      summary: `Opus costs 5× more than Sonnet. ${opusSessions.length} sessions used Opus.`,
-      detail: `For file editing, code explanation, and simple Q&A, Sonnet provides near-identical results at 5× less cost. Reserve Opus for multi-step planning and complex architecture decisions.`,
+      title: `${fmt$(opusEntry.cost)} spent on Opus — could save ~${fmt$(potentialSaving)} with Sonnet`,
+      summary: `Opus costs 5× more than Sonnet. ${opusEntry.messages.toLocaleString()} Opus API calls recorded.`,
+      detail: `For file editing, code explanation, and simple Q&A, Sonnet provides near-identical results at 5× less cost. ${sonnetEntry ? `You already use Sonnet (${sonnetEntry.messages.toLocaleString()} calls). ` : ''}Reserve Opus for multi-step planning and complex architecture decisions.`,
     });
   }
 
