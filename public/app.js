@@ -143,15 +143,16 @@ function renderSummaryCards(s) {
 
   // Budget alert
   const budgetVal = parseFloat(localStorage.getItem('budget') || '0');
+  const budgetInput = document.getElementById('budget-input');
+  if (!budgetInput.value) budgetInput.value = localStorage.getItem('budget') || '';
   if (budgetVal > 0) {
-    const pct = (s.totalCost / budgetVal * 100).toFixed(0);
-    document.getElementById('budget-status').textContent = `${pct}%`;
-    document.getElementById('budget-alert-card').className = `stat-card ${parseFloat(pct) >= 90 ? 'red' : parseFloat(pct) >= 70 ? 'warn' : ''}`;
+    const pct = Math.round(s.totalCost / budgetVal * 100);
+    document.getElementById('budget-status').textContent = `${fmt$(s.totalCost)} / ${fmt$(budgetVal)}`;
+    document.getElementById('budget-alert-card').className = `stat-card ${pct >= 90 ? 'red' : pct >= 70 ? 'warn' : ''}`;
   } else {
     document.getElementById('budget-status').textContent = 'Not set';
     document.getElementById('budget-alert-card').className = 'stat-card';
   }
-  document.getElementById('budget-input').value = localStorage.getItem('budget') || '';
 }
 
 // ===== Daily chart =====
@@ -381,16 +382,23 @@ function renderTopMessages(messages) {
 }
 
 // ===== Model chart =====
+function modelColor(m) {
+  if (!m) return '#f59e0b';
+  if (m.includes('opus'))   return '#a78bfa';   // purple — matches .model-opus
+  if (m.includes('sonnet')) return '#3b82f6';   // blue   — matches .model-sonnet
+  if (m.includes('haiku'))  return '#22c55e';   // green  — matches .model-haiku
+  return '#f59e0b';
+}
+
 function renderModelChart(breakdown) {
   const ctx = document.getElementById('model-pie-chart').getContext('2d');
   if (modelPieChart) modelPieChart.destroy();
   if (!breakdown || breakdown.length === 0) return;
-  const COLORS = ['#d97706','#3b82f6','#22c55e','#a78bfa','#f43f5e','#06b6d4'];
   modelPieChart = new Chart(ctx, {
     type:'doughnut',
     data:{
       labels: breakdown.map(m => shortModelName(m.model)),
-      datasets:[{ data:breakdown.map(m=>m.cost), backgroundColor:COLORS.slice(0,breakdown.length), borderColor:'#ffffff', borderWidth:2 }],
+      datasets:[{ data:breakdown.map(m=>m.cost), backgroundColor:breakdown.map(m=>modelColor(m.model)), borderColor:'#ffffff', borderWidth:2 }],
     },
     options:{
       responsive:true, maintainAspectRatio:false, cutout:'60%',
@@ -768,8 +776,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Budget input
-  document.getElementById('budget-input').addEventListener('change', e => {
-    localStorage.setItem('budget', e.target.value || '0');
+  const applyBudget = () => {
+    const val = document.getElementById('budget-input').value;
+    localStorage.setItem('budget', val || '0');
+    if (analyticsData) renderSummaryCards(analyticsData.summary);
+  };
+  document.getElementById('budget-set-btn').addEventListener('click', applyBudget);
+  document.getElementById('budget-input').addEventListener('keydown', e => { if (e.key === 'Enter') applyBudget(); });
+  document.getElementById('budget-clear-btn').addEventListener('click', () => {
+    localStorage.removeItem('budget');
+    document.getElementById('budget-input').value = '';
     if (analyticsData) renderSummaryCards(analyticsData.summary);
   });
 
