@@ -1,29 +1,42 @@
 'use strict';
 
 // Pricing per 1 million tokens (USD)
-// Sources: Anthropic pricing page, approximate 2025/2026 rates
+// Sources: Anthropic pricing page (as of 2026-06)
+// Cache writes: 25% premium over input; cache reads: 10% of input price
 const MODEL_PRICING = {
-  // Claude Opus 4.x
-  'claude-opus-4': {
-    input: 15.0,
-    output: 75.0,
-    cacheWrite: 18.75,
-    cacheRead: 1.50,
+  // Claude Opus 4.x — $5/1M input, $25/1M output
+  'claude-opus-4-8': {
+    input: 5.0,
+    output: 25.0,
+    cacheWrite: 6.25,
+    cacheRead: 0.50,
   },
-  'claude-opus-4-5': {
-    input: 15.0,
-    output: 75.0,
-    cacheWrite: 18.75,
-    cacheRead: 1.50,
+  'claude-opus-4-7': {
+    input: 5.0,
+    output: 25.0,
+    cacheWrite: 6.25,
+    cacheRead: 0.50,
   },
   'claude-opus-4-6': {
-    input: 15.0,
-    output: 75.0,
-    cacheWrite: 18.75,
-    cacheRead: 1.50,
+    input: 5.0,
+    output: 25.0,
+    cacheWrite: 6.25,
+    cacheRead: 0.50,
   },
-  // Claude Sonnet 4.x
-  'claude-sonnet-4': {
+  'claude-opus-4-5': {
+    input: 5.0,
+    output: 25.0,
+    cacheWrite: 6.25,
+    cacheRead: 0.50,
+  },
+  'claude-opus-4': {
+    input: 5.0,
+    output: 25.0,
+    cacheWrite: 6.25,
+    cacheRead: 0.50,
+  },
+  // Claude Sonnet 4.x — $3/1M input, $15/1M output
+  'claude-sonnet-4-6': {
     input: 3.0,
     output: 15.0,
     cacheWrite: 3.75,
@@ -35,25 +48,26 @@ const MODEL_PRICING = {
     cacheWrite: 3.75,
     cacheRead: 0.30,
   },
-  'claude-sonnet-4-6': {
+  'claude-sonnet-4': {
     input: 3.0,
     output: 15.0,
     cacheWrite: 3.75,
     cacheRead: 0.30,
   },
-  // Claude Haiku 4.x / 3.x
-  'claude-haiku-4': {
-    input: 0.80,
-    output: 4.0,
-    cacheWrite: 1.00,
-    cacheRead: 0.08,
-  },
+  // Claude Haiku 4.x — $1/1M input, $5/1M output
   'claude-haiku-4-5': {
-    input: 0.80,
-    output: 4.0,
-    cacheWrite: 1.00,
-    cacheRead: 0.08,
+    input: 1.0,
+    output: 5.0,
+    cacheWrite: 1.25,
+    cacheRead: 0.10,
   },
+  'claude-haiku-4': {
+    input: 1.0,
+    output: 5.0,
+    cacheWrite: 1.25,
+    cacheRead: 0.10,
+  },
+  // Claude 3.5 Haiku — $0.80/1M input, $4/1M output
   'claude-haiku-3-5': {
     input: 0.80,
     output: 4.0,
