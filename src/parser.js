@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { glob } = require('glob');
-const { calculateCost } = require('./pricing');
+const { calculateCost, getPricing } = require('./pricing');
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude', 'projects');
 
@@ -170,6 +170,15 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     }
   }
 
+  // ── Build sessionTimestampsAll from unfiltered byUuid (before date filter) ──
+  // Must use byUuid here (not pass 2) so gaps that straddle the date boundary are detected.
+  const sessionTimestampsAll = {};
+  for (const { entry, sessionId } of byUuid.values()) {
+    if (!entry.timestamp) continue;
+    if (!sessionTimestampsAll[sessionId]) sessionTimestampsAll[sessionId] = [];
+    sessionTimestampsAll[sessionId].push(entry.timestamp);
+  }
+
   // ── Pass 2: aggregate ──────────────────────────────────────────────────────
   const { startDate, endDate, tzOffset = 0 } = opts;
   const sessionMap = new Map();
@@ -178,7 +187,6 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   const hourlyMap = {};
   const allMessages = [];  // every message for costly queries / model queries
   const projectMap = {}; // projectName -> { cost, totalTokens, messages, sessions, toolCalls, models: Set }
-  const sessionTimestampsAll = {}; // sessionId -> [timestamps] for rate-limit gap detection
 
   let totalCost = 0, totalInputTokens = 0, totalOutputTokens = 0;
   let totalCacheWrite = 0, totalCacheRead = 0, totalCacheReadSavings = 0, totalMessages = 0;
@@ -212,10 +220,6 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     totalCacheRead += cr;
     totalCacheReadSavings += costs.cacheReadSavings;
     totalMessages++;
-
-    // Track all timestamps per session (for rate-limit gap detection)
-    if (!sessionTimestampsAll[sessionId]) sessionTimestampsAll[sessionId] = [];
-    sessionTimestampsAll[sessionId].push(timestamp);
 
     // Session
     if (!sessionMap.has(sessionId)) {
@@ -267,6 +271,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     const parentUserEntry = userByUuid.get(entry.parentUuid) || userByUuid.get(entry.uuid);
     let promptSnippet = '';
     let isAutomated = false;
+    let promptFullWordCount = 0;
     if (parentUserEntry?.message?.content) {
       const raw = cleanIdeSelection(extractText(parentUserEntry.message.content).replace(/\s+/g, ' ').trim());
       const label = automationLabel(raw);
@@ -275,6 +280,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
         isAutomated = true;
       } else {
         promptSnippet = raw.slice(0, 200);
+        promptFullWordCount = raw.split(/\s+/).filter(Boolean).length;
       }
     }
 
@@ -296,8 +302,8 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     projectMap[projectName].toolCalls += toolCallCount;
     if (model) projectMap[projectName].models.add(model);
 
-    const wordCount = promptSnippet ? promptSnippet.split(/\s+/).filter(Boolean).length : 0;
-    const tokenDensity = wordCount > 3 ? Math.round(total / wordCount) : 0;
+    // Use full prompt word count (not truncated snippet) to avoid inflated density
+    const tokenDensity = promptFullWordCount > 3 ? Math.round(total / promptFullWordCount) : 0;
     const isBloated = inp > 12000 && out < inp * 0.06;
     allMessages.push({
       sessionId, projectName, timestamp, model: modelKey,
@@ -316,7 +322,9 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   })).sort((a, b) => b.cost - a.cost);
 
   const totalAllTokens = totalInputTokens + totalCacheWrite + totalCacheRead + totalOutputTokens;
-  const cacheHitRate = totalAllTokens > 0 ? Math.round((totalCacheRead / totalAllTokens) * 100) : 0;
+  // Cache hit rate: fraction of readable input tokens that came from cache (excludes output from denominator)
+  const cacheHitRate = (totalCacheRead + totalInputTokens) > 0
+    ? Math.round((totalCacheRead / (totalCacheRead + totalInputTokens)) * 100) : 0;
   const zeroCacheSessions = sessions.filter(s => s.cacheRead === 0).length;
 
   // Cache efficiency score: what % of token reads came from cache vs fresh input
@@ -619,12 +627,19 @@ function generateInsights({ sessions, dailySeries, topMessages, totalCost, total
     });
   }
 
-  tips.push({
-    icon: '🧠',
-    title: 'Model choice significantly impacts cost',
-    summary: 'Opus costs 5× more than Sonnet and 18× more than Haiku per token.',
-    detail: `Pricing per 1M tokens: Opus $15 input/$75 output, Sonnet $3/$15, Haiku $0.80/$4. For routine tasks like file editing, code completion, and simple Q&A, Haiku or Sonnet deliver excellent results at a fraction of the cost. Reserve Opus for complex multi-step reasoning.`,
-  });
+  {
+    const op = getPricing('claude-opus-4');
+    const sn = getPricing('claude-sonnet-4');
+    const hk = getPricing('claude-haiku-4');
+    const opVsSn = (op.input / sn.input).toFixed(1);
+    const snVsHk = (sn.input / hk.input).toFixed(1);
+    tips.push({
+      icon: '🧠',
+      title: 'Model choice significantly impacts cost',
+      summary: `Opus costs ~${opVsSn}× more than Sonnet, and Sonnet costs ~${snVsHk}× more than Haiku per token.`,
+      detail: `Pricing per 1M tokens: Opus $${op.input} input/$${op.output} output, Sonnet $${sn.input}/$${sn.output}, Haiku $${hk.input}/$${hk.output}. For routine tasks like file editing, code completion, and simple Q&A, Haiku or Sonnet deliver excellent results at a fraction of the cost. Reserve Opus for complex multi-step reasoning.`,
+    });
+  }
 
   // Anomaly detection
   if (anomalyDays.length > 0) {
@@ -648,16 +663,20 @@ function generateInsights({ sessions, dailySeries, topMessages, totalCost, total
     });
   }
 
-  // Opus cost optimisation — use modelBreakdown for accurate per-model cost
+  // Opus cost optimisation — dynamically compute ratio from current pricing
   const opusEntry = modelBreakdown.find(m => m.model.includes('opus'));
   if (opusEntry && opusEntry.cost > 0) {
     const sonnetEntry = modelBreakdown.find(m => m.model.includes('sonnet'));
-    const potentialSaving = opusEntry.cost * 0.8; // ~80% savings switching to Sonnet
+    const opusPricing = getPricing(opusEntry.model);
+    const sonnetPricing = getPricing(sonnetEntry ? sonnetEntry.model : 'claude-sonnet-4');
+    const ratio = (opusPricing.input / sonnetPricing.input).toFixed(1);
+    const savingFraction = 1 - (sonnetPricing.input / opusPricing.input);
+    const potentialSaving = opusEntry.cost * savingFraction;
     tips.push({
       icon: '💡',
       title: `${fmt$(opusEntry.cost)} spent on Opus — could save ~${fmt$(potentialSaving)} with Sonnet`,
-      summary: `Opus costs 5× more than Sonnet. ${opusEntry.messages.toLocaleString()} Opus API calls recorded.`,
-      detail: `For file editing, code explanation, and simple Q&A, Sonnet provides near-identical results at 5× less cost. ${sonnetEntry ? `You already use Sonnet (${sonnetEntry.messages.toLocaleString()} calls). ` : ''}Reserve Opus for multi-step planning and complex architecture decisions.`,
+      summary: `Opus costs ~${ratio}× more than Sonnet. ${opusEntry.messages.toLocaleString()} Opus API calls recorded.`,
+      detail: `For file editing, code explanation, and simple Q&A, Sonnet provides near-identical results at ~${ratio}× less cost. ${sonnetEntry ? `You already use Sonnet (${sonnetEntry.messages.toLocaleString()} calls). ` : ''}Reserve Opus for multi-step planning and complex architecture decisions.`,
     });
   }
 
