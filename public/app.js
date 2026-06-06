@@ -976,4 +976,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('loading-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   showSection('overview');
+
+  // Real-time push via SSE
+  setupEventSource();
 });
+
+// ===== Server-Sent Events (real-time file-watcher push) =====
+function setupEventSource() {
+  const dot = document.getElementById('live-dot');
+  const label = document.getElementById('live-label');
+
+  function setLiveState(state) {
+    if (!dot || !label) return;
+    if (state === 'live') {
+      dot.className = 'live-dot live';
+      label.textContent = 'Live';
+    } else if (state === 'updating') {
+      dot.className = 'live-dot updating';
+      label.textContent = 'Updating…';
+    } else {
+      dot.className = 'live-dot offline';
+      label.textContent = 'Reconnecting…';
+    }
+  }
+
+  const evtSource = new EventSource('/api/events');
+
+  evtSource.addEventListener('open', () => setLiveState('live'));
+
+  evtSource.addEventListener('data-changed', () => {
+    setLiveState('updating');
+    loadData().then(() => setLiveState('live'));
+  });
+
+  evtSource.addEventListener('error', () => {
+    setLiveState('offline');
+    // EventSource auto-reconnects — state will flip back to 'live' on next 'open'
+  });
+}
