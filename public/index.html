@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Claude Token Tracker</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="/chart.umd.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -88,6 +88,10 @@
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 7A5 5 0 112 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 4v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Refresh
       </button>
+      <div class="live-indicator" id="live-indicator" title="Real-time updates via file watcher">
+        <span class="live-dot" id="live-dot"></span>
+        <span class="live-label" id="live-label">Connecting…</span>
+      </div>
       <p class="last-updated" id="last-updated">—</p>
     </div>
   </aside>

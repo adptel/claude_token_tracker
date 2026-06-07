@@ -218,7 +218,7 @@ function renderSummaryCards(s) {
     const score = s.cacheEfficiencyScore || 0;
     effEl.textContent = `${score}%`;
     const card = document.getElementById('cache-efficiency-card');
-    if (card) card.className = `stat-card${score >= 60 ? ' green' : score >= 30 ? '' : ''}`;
+    if (card) card.className = `stat-card${score >= 60 ? ' green' : score >= 30 ? '' : ' warn'}`;
   }
 
   // 5h billing window
@@ -246,6 +246,9 @@ function startWindowCountdown(oldestTs, windowHours) {
   const windowMs = windowHours * 60 * 60 * 1000;
   const oldestMs = new Date(oldestTs).getTime();
 
+  // Capture interval ID locally so the expiry handler clears its OWN timer,
+  // not a newer one that may have been assigned to windowCountdownInterval.
+  let localIntervalId;
   function update() {
     const now = Date.now();
     const expiresAt = oldestMs + windowMs;
@@ -253,7 +256,7 @@ function startWindowCountdown(oldestTs, windowHours) {
     if (remaining <= 0) {
       countdownEl.textContent = 'expired';
       if (barFill) barFill.style.width = '0%';
-      clearInterval(windowCountdownInterval);
+      clearInterval(localIntervalId);
       return;
     }
     const totalElapsed = now - oldestMs;
@@ -265,7 +268,8 @@ function startWindowCountdown(oldestTs, windowHours) {
   }
 
   update();
-  windowCountdownInterval = setInterval(update, 1000);
+  localIntervalId = setInterval(update, 1000);
+  windowCountdownInterval = localIntervalId;
 }
 
 // ===== Daily chart =====
@@ -972,4 +976,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('loading-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   showSection('overview');
+
+  // Real-time push via SSE
+  setupEventSource();
 });
+
+// ===== Server-Sent Events (real-time file-watcher push) =====
+function setupEventSource() {
+  const dot = document.getElementById('live-dot');
+  const label = document.getElementById('live-label');
+
+  function setLiveState(state) {
+    if (!dot || !label) return;
+    if (state === 'live') {
+      dot.className = 'live-dot live';
+      label.textContent = 'Live';
+    } else if (state === 'updating') {
+      dot.className = 'live-dot updating';
+      label.textContent = 'Updating…';
+    } else {
+      dot.className = 'live-dot offline';
+      label.textContent = 'Reconnecting…';
+    }
+  }
+
+  const evtSource = new EventSource('/api/events');
+
+  evtSource.addEventListener('open', () => setLiveState('live'));
+
+  evtSource.addEventListener('data-changed', () => {
+    setLiveState('updating');
+    loadData().then(() => setLiveState('live'));
+  });
+
+  evtSource.addEventListener('error', () => {
+    setLiveState('offline');
+    // EventSource auto-reconnects — state will flip back to 'live' on next 'open'
+  });
+}
