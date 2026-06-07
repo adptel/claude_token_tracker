@@ -7,12 +7,14 @@ A local analytics dashboard for your Claude Code token usage and spend. Reads se
 ## Quick start
 
 ```bash
-npx claude-token-tracker
+npx github:adptel/claude_token_tracker
 ```
 
-Opens `http://localhost:3737` in your browser. That's it.
+npx downloads the package directly from GitHub and runs it — no npm publish or global install needed. Opens `http://localhost:3737` in your browser automatically.
 
-## Run from source
+> **Requirements:** Node.js 18+
+
+## Clone and run locally
 
 ```bash
 git clone https://github.com/adptel/claude_token_tracker
@@ -24,7 +26,7 @@ npm start
 ## Options
 
 ```
-npx claude-token-tracker [options]
+npx github:adptel/claude_token_tracker [options]
 
   -p, --port <n>    Port to listen on  (default: 3737)
   --no-open         Don't auto-open the browser
