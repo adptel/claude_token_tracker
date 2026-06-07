@@ -185,6 +185,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
   const dailyMap = {};
   const modelMap = {};
   const hourlyMap = {};
+  const heatmapMatrix = Array.from({length: 7}, () => new Array(24).fill(0)); // [dow][hour]
   const allMessages = [];  // every message for costly queries / model queries
   const projectMap = {}; // projectName -> { cost, totalTokens, messages, sessions, toolCalls, models: Set }
 
@@ -292,6 +293,9 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     if (!hourlyMap[hour]) hourlyMap[hour] = { cost: 0, messages: 0 };
     hourlyMap[hour].cost += costs.total;
     hourlyMap[hour].messages++;
+
+    // Heatmap (day-of-week × hour in local/adjusted time)
+    heatmapMatrix[_d.getUTCDay()][_d.getUTCHours()]++;
 
     // Project
     if (!projectMap[projectName]) projectMap[projectName] = { cost: 0, totalTokens: 0, messages: 0, sessions: new Set(), toolCalls: 0, models: new Set() };
@@ -440,6 +444,7 @@ async function buildAnalytics(baseDir = CLAUDE_DIR, opts = {}) {
     modelQueries,
     hourlySeries,
     topMessages: topMessagesByCost,
+    heatmapData: heatmapMatrix,
     insights,
     rateLimitEvents: rateLimitEvents.slice(0, 20),
     projects: Object.entries(projectMap)

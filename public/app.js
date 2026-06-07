@@ -103,9 +103,9 @@ function shortModelName(m) {
 
 function modelClass(m) {
   if (!m) return '';
-  if (m.includes('opus')) return 'model-opus';
+  if (m.includes('opus'))   return 'model-opus';
   if (m.includes('sonnet')) return 'model-sonnet';
-  if (m.includes('haiku')) return 'model-haiku';
+  if (m.includes('haiku'))  return 'model-haiku';
   return '';
 }
 
@@ -151,17 +151,16 @@ function fmtDuration(ms) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-// ===== Chart defaults =====
-Chart.defaults.color = '#5c6080';
-Chart.defaults.borderColor = '#dde0ef';
-Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
-Chart.defaults.font.size = 12;
+// ===== Chart defaults (dark theme) =====
+Chart.defaults.color = '#686868';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+Chart.defaults.font.family = "'JetBrains Mono', monospace";
+Chart.defaults.font.size = 11;
 
 function ttCfg() {
   return {
-    backgroundColor: '#ffffff', borderColor: '#dde0ef', borderWidth: 1,
-    titleColor: '#18192b', bodyColor: '#5c6080', padding: 10, cornerRadius: 6,
-    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+    backgroundColor: '#1c1c1c', borderColor: 'rgba(255,255,255,0.12)', borderWidth: 1,
+    titleColor: '#c8c8c8', bodyColor: '#686868', padding: 9, cornerRadius: 4,
   };
 }
 
@@ -188,9 +187,20 @@ function renderSummaryCards(s) {
   document.getElementById('cache-savings').innerHTML = fmt$(s.totalCacheReadSavings) + trendHtml(s.totalCacheReadSavings, p?.totalCacheReadSavings, false);
   document.getElementById('total-messages-sub').textContent = `${s.totalMessages.toLocaleString()} messages`;
   document.getElementById('total-token-breakdown').textContent =
-    `${fmtTokens(s.totalInputTokens)} in · ${fmtTokens(s.totalCacheWrite)} cache w · ${fmtTokens(s.totalOutputTokens)} out`;
-  document.getElementById('cache-read-sub').textContent = `${fmtTokens(s.totalCacheRead)} tokens from cache`;
-  document.getElementById('total-sessions-sub').textContent = `${s.totalSessions} sessions · ${s.totalProjects} projects`;
+    `${fmtTokens(s.totalInputTokens)} in · ${fmtTokens(s.totalCacheWrite)} cw · ${fmtTokens(s.totalOutputTokens)} out`;
+  document.getElementById('cache-read-sub').textContent = `${s.cacheHitRate}% hit rate`;
+  // New top-stats-bar elements
+  const sessCount = document.getElementById('total-sessions-count');
+  if (sessCount) sessCount.textContent = s.totalSessions.toLocaleString();
+  document.getElementById('total-sessions-sub').textContent = `${s.totalProjects} project${s.totalProjects !== 1 ? 's' : ''}`;
+  // Usage summary line
+  const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setEl('usage-total-messages', s.totalMessages.toLocaleString());
+  setEl('usage-total-sessions', s.totalSessions.toLocaleString());
+  setEl('usage-total-tokens', fmtTokens(s.totalAllTokens));
+  // cache-read-sub2 in efficiency card
+  const crs2 = document.getElementById('cache-read-sub2');
+  if (crs2) crs2.textContent = `${fmtTokens(s.totalCacheRead)} from cache`;
 
   // New stat cards
   document.getElementById('cost-per-msg').innerHTML = fmt$(s.costPerMessage) + trendHtml(s.costPerMessage, p?.costPerMessage, true);
@@ -272,6 +282,82 @@ function startWindowCountdown(oldestTs, windowHours) {
   windowCountdownInterval = localIntervalId;
 }
 
+// ===== Model bars (overview) =====
+function renderModelBarsOverview(breakdown) {
+  const container = document.getElementById('model-bars-overview');
+  if (!container || !breakdown || !breakdown.length) return;
+  const maxTokens = Math.max(...breakdown.map(m => m.totalTokens), 1);
+  const colors = { opus: '#e07000', sonnet: '#00b4b4', haiku: '#00a060' };
+  container.innerHTML = breakdown.slice(0, 5).map(m => {
+    const name = shortModelName(m.model);
+    const pct = Math.max(2, Math.round((m.totalTokens / maxTokens) * 100));
+    const color = colors[name.toLowerCase()] || '#e07000';
+    const toks = fmtTokens(m.totalTokens);
+    return `
+      <div class="model-bar-row">
+        <div class="model-bar-name">${name}</div>
+        <div class="model-bar-track">
+          <div class="model-bar-bg"></div>
+          <div class="model-bar-fill" style="width:${pct}%;background:${color}"></div>
+          <span class="model-bar-label">${toks}</span>
+        </div>
+        <div class="model-bar-cost">${fmt$(m.cost)}</div>
+      </div>`;
+  }).join('');
+}
+
+// ===== Heatmap =====
+function renderHeatmap(heatmapData) {
+  const container = document.getElementById('heatmap-container');
+  if (!container || !heatmapData) return;
+  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const DOW = [1, 2, 3, 4, 5, 6, 0]; // Mon-first order (JS getDay: 0=Sun)
+  const maxVal = Math.max(...DOW.flatMap(d => heatmapData[d]), 1);
+
+  let html = '<div class="heatmap-inner">';
+
+  // Hour axis labels row
+  html += '<div class="heatmap-hour-label-row">';
+  for (let h = 0; h < 24; h++) {
+    html += `<div class="heatmap-hlabel">${h % 6 === 0 ? h : ''}</div>`;
+  }
+  html += '</div>';
+
+  // Data rows
+  for (let di = 0; di < 7; di++) {
+    const dow = DOW[di];
+    html += `<div class="heatmap-row"><div class="heatmap-day-label">${DAYS[di]}</div>`;
+    for (let h = 0; h < 24; h++) {
+      const val = heatmapData[dow][h];
+      let bg;
+      if (val === 0) {
+        bg = 'rgba(255,255,255,0.03)';
+      } else {
+        const t = val / maxVal;
+        const g = Math.round(112 * (1 - t * 0.35));
+        const a = (0.18 + t * 0.82).toFixed(2);
+        bg = `rgba(224,${g},0,${a})`;
+      }
+      html += `<div class="heatmap-cell" style="background:${bg}" title="${val} msg · ${DAYS[di]} ${String(h).padStart(2,'0')}:00"></div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Footer + legend
+  html += '<div class="heatmap-footer">By Hour of Day</div>';
+  html += '<div class="heatmap-legend"><span class="heatmap-legend-label">Less</span><div style="display:flex;gap:2px">';
+  for (let i = 0; i <= 4; i++) {
+    const t = i / 4;
+    const g = Math.round(112 * (1 - t * 0.35));
+    const a = i === 0 ? 0.06 : (0.18 + t * 0.82).toFixed(2);
+    html += `<div class="heatmap-legend-cell" style="background:rgba(224,${g},0,${a})"></div>`;
+  }
+  html += '</div><span class="heatmap-legend-label">More</span></div>';
+
+  container.innerHTML = html;
+}
+
 // ===== Daily chart =====
 function renderDailyChart(series) {
   const ctx = document.getElementById('daily-chart').getContext('2d');
@@ -284,8 +370,8 @@ function renderDailyChart(series) {
         return `${m}/${day}`;
       }),
       datasets: [
-        { label:'Cost ($)', data: series.map(d => d.cost), backgroundColor:'rgba(217,119,6,0.7)', borderColor:'#d97706', borderWidth:1, borderRadius:4, yAxisID:'y' },
-        { label:'Output Tokens', data: series.map(d => d.outputTokens), type:'line', borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderWidth:2, pointRadius:3, pointBackgroundColor:'#3b82f6', tension:0.3, fill:true, yAxisID:'y2' },
+        { label:'Cost ($)', data: series.map(d => d.cost), backgroundColor:'rgba(224,112,0,0.65)', borderColor:'#e07000', borderWidth:1, borderRadius:3, yAxisID:'y' },
+        { label:'Output Tokens', data: series.map(d => d.outputTokens), type:'line', borderColor:'#4488ff', backgroundColor:'rgba(68,136,255,0.06)', borderWidth:1.5, pointRadius:2, pointBackgroundColor:'#4488ff', tension:0.3, fill:true, yAxisID:'y2' },
       ],
     },
     options: {
@@ -293,9 +379,9 @@ function renderDailyChart(series) {
       interaction:{ mode:'index', intersect:false },
       plugins:{ legend:{display:false}, tooltip:{ ...ttCfg(), callbacks:{ label:(c)=> c.datasetIndex===0 ? ` Cost: ${fmt$(c.parsed.y)}` : ` Output: ${fmtTokens(c.parsed.y)}` } } },
       scales:{
-        x:{ grid:{color:'#eaecf4'}, ticks:{maxRotation:45,font:{size:11}} },
-        y:{ type:'linear', position:'left', grid:{color:'#eaecf4'}, ticks:{callback:v=>fmt$(v),font:{size:11}} },
-        y2:{ type:'linear', position:'right', grid:{drawOnChartArea:false}, ticks:{callback:v=>fmtTokens(v),font:{size:11}} },
+        x:{ grid:{color:'rgba(255,255,255,0.05)'}, ticks:{maxRotation:45,font:{size:10}} },
+        y:{ type:'linear', position:'left', grid:{color:'rgba(255,255,255,0.05)'}, ticks:{callback:v=>fmt$(v),font:{size:10}} },
+        y2:{ type:'linear', position:'right', grid:{drawOnChartArea:false}, ticks:{callback:v=>fmtTokens(v),font:{size:10}} },
       },
     },
   });
@@ -312,12 +398,12 @@ function renderHourlyChart(series) {
     type:'bar',
     data:{
       labels: series.map(h => `${String(h.hour).padStart(2,'0')}:00`),
-      datasets:[{ label:'Messages', data:messages, backgroundColor:messages.map(m=>`rgba(217,119,6,${0.1+(m/maxMsg)*0.8})`), borderColor:'transparent', borderRadius:3 }],
+      datasets:[{ label:'Messages', data:messages, backgroundColor:messages.map(m=>`rgba(224,112,0,${0.1+(m/maxMsg)*0.8})`), borderColor:'transparent', borderRadius:2 }],
     },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{display:false}, tooltip:{ ...ttCfg(), callbacks:{ label:(c)=>[` ${c.parsed.y} messages`,` Cost: ${fmt$(costs[c.dataIndex])}`] } } },
-      scales:{ x:{grid:{display:false},ticks:{font:{size:10},maxRotation:0}}, y:{grid:{color:'#eaecf4'},ticks:{font:{size:11},stepSize:1}} },
+      scales:{ x:{grid:{display:false},ticks:{font:{size:10},maxRotation:0}}, y:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{font:{size:10},stepSize:1}} },
     },
   });
 }
@@ -502,11 +588,11 @@ function renderTopMessages(messages) {
 
 // ===== Model chart =====
 function modelColor(m) {
-  if (!m) return '#f59e0b';
-  if (m.includes('opus'))   return '#a78bfa';   // purple — matches .model-opus
-  if (m.includes('sonnet')) return '#3b82f6';   // blue   — matches .model-sonnet
-  if (m.includes('haiku'))  return '#22c55e';   // green  — matches .model-haiku
-  return '#f59e0b';
+  if (!m) return '#e07000';
+  if (m.includes('opus'))   return '#e07000';
+  if (m.includes('sonnet')) return '#00b4b4';
+  if (m.includes('haiku'))  return '#00a060';
+  return '#e07000';
 }
 
 function renderModelChart(breakdown) {
@@ -517,12 +603,12 @@ function renderModelChart(breakdown) {
     type:'doughnut',
     data:{
       labels: breakdown.map(m => shortModelName(m.model)),
-      datasets:[{ data:breakdown.map(m=>m.cost), backgroundColor:breakdown.map(m=>modelColor(m.model)), borderColor:'#ffffff', borderWidth:2 }],
+      datasets:[{ data:breakdown.map(m=>m.cost), backgroundColor:breakdown.map(m=>modelColor(m.model)), borderColor:'#0e0e0e', borderWidth:2 }],
     },
     options:{
-      responsive:true, maintainAspectRatio:false, cutout:'60%',
+      responsive:true, maintainAspectRatio:false, cutout:'62%',
       plugins:{
-        legend:{position:'bottom',labels:{padding:16,font:{size:12},color:'#5c6080'}},
+        legend:{position:'bottom',labels:{padding:14,font:{size:11},color:'#686868'}},
         tooltip:{ ...ttCfg(), callbacks:{ label:(c)=>{ const t=c.dataset.data.reduce((a,b)=>a+b,0); return ` ${fmt$(c.parsed)} (${t>0?((c.parsed/t)*100).toFixed(1):0}%)`; } } },
       },
     },
@@ -751,6 +837,14 @@ async function loadData() {
     renderAll(analyticsData);
     updateDateLabel(activeDateRange);
     document.getElementById('last-updated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    const rangeEl = document.getElementById('usage-date-range');
+    if (rangeEl) {
+      if (activeDateRange === 0 && !customStart) rangeEl.textContent = 'all time';
+      else if (activeDateRange === 7) rangeEl.textContent = 'last 7 days';
+      else if (activeDateRange === 30) rangeEl.textContent = 'last 30 days';
+      else if (activeDateRange === 90) rangeEl.textContent = 'last 90 days';
+      else rangeEl.textContent = 'custom range';
+    }
   } catch (err) {
     console.error('Failed to load analytics:', err);
     document.getElementById('last-updated').textContent = 'Error loading data';
@@ -761,6 +855,8 @@ async function loadData() {
 
 function renderAll(data) {
   renderSummaryCards(data.summary);
+  renderModelBarsOverview(data.modelBreakdown);
+  renderHeatmap(data.heatmapData);
   renderDailyChart(data.dailySeries);
   renderHourlyChart(data.hourlySeries);
   renderSessionsTable(data.sessions, document.getElementById('sessions-search')?.value || '');
@@ -933,23 +1029,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     chevron.classList.toggle('open', !isOpen);
   });
 
-  // Dark / compact mode
-  if (localStorage.getItem('theme') === 'dark') {
-    document.body.classList.add('dark-mode');
-    document.getElementById('theme-toggle').textContent = '☀️';
-  }
+  // Compact mode
   if (localStorage.getItem('compact') === '1') document.body.classList.add('compact-mode');
-
-  document.getElementById('theme-toggle').addEventListener('click', () => {
-    const isDark = document.body.classList.toggle('dark-mode');
-    document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-    if (analyticsData) setTimeout(() => { renderDailyChart(analyticsData.dailySeries); renderHourlyChart(analyticsData.hourlySeries); }, 50);
-  });
-  document.getElementById('compact-toggle').addEventListener('click', () => {
-    const isCompact = document.body.classList.toggle('compact-mode');
-    localStorage.setItem('compact', isCompact ? '1' : '0');
-  });
 
   // Budget — init from localStorage and wire Enter key
   try { const s = localStorage.getItem('budget'); if (s) _budgetAmount = parseFloat(s) || 0; } catch(e) {}

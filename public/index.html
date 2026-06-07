@@ -7,7 +7,7 @@
   <script src="/chart.umd.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -17,12 +17,12 @@
   <div class="loading-content">
     <div class="loading-logo">
       <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-        <circle cx="24" cy="24" r="22" stroke="#d97706" stroke-width="2.5" fill="none" opacity="0.3"/>
-        <circle cx="24" cy="24" r="22" stroke="#d97706" stroke-width="2.5" fill="none"
+        <circle cx="24" cy="24" r="22" stroke="#e07000" stroke-width="2.5" fill="none" opacity="0.25"/>
+        <circle cx="24" cy="24" r="22" stroke="#e07000" stroke-width="2.5" fill="none"
           stroke-dasharray="138.2" stroke-dashoffset="138.2" class="spin-ring"/>
       </svg>
     </div>
-    <p class="loading-text">Analyzing your Claude usage…</p>
+    <p class="loading-text">Analyzing Claude usage…</p>
   </div>
 </div>
 
@@ -43,79 +43,89 @@
 
 <!-- Main app -->
 <div id="app" style="display:none">
-  <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar-logo">
-      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-        <rect width="28" height="28" rx="8" fill="#d97706"/>
-        <path d="M7 14 C7 9 10 7 14 7 C18 7 21 9 21 14 C21 19 18 21 14 21 C10 21 7 19 7 14Z" stroke="white" stroke-width="1.5" fill="none"/>
-        <circle cx="14" cy="14" r="3" fill="white"/>
+
+  <!-- ===== Top header ===== -->
+  <header class="app-header">
+    <div class="header-brand">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect width="16" height="16" rx="3" fill="#e07000" opacity="0.15"/>
+        <circle cx="8" cy="8" r="5" stroke="#e07000" stroke-width="1.2" fill="none"/>
+        <circle cx="8" cy="8" r="2" fill="#e07000"/>
       </svg>
-      <span class="sidebar-title">Token Tracker</span>
+      Claude Token Tracker
     </div>
-    <nav class="sidebar-nav">
-      <a href="#" class="nav-item active" data-section="overview">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.7"/></svg>
-        Overview
-      </a>
-      <a href="#" class="nav-item" data-section="sessions">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        Sessions
-      </a>
-      <a href="#" class="nav-item" data-section="messages">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13 2H3a1 1 0 00-1 1v7a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V3a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
-        Costly Messages
-      </a>
-      <a href="#" class="nav-item" data-section="models">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 2v6l4 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        Models
-      </a>
-      <a href="#" class="nav-item" data-section="projects">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 3h5l1.5 2H14v8H2V3z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/></svg>
-        Projects
-      </a>
-      <a href="#" class="nav-item" data-section="insights">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1l1.8 4h4.2l-3.4 2.5 1.3 4L8 9l-3.9 2.5 1.3-4L2 5h4.2L8 1z" fill="currentColor"/></svg>
-        Insights
-      </a>
+    <nav class="top-nav">
+      <a href="#" class="nav-item active" data-section="overview">Overview</a>
+      <a href="#" class="nav-item" data-section="sessions">Sessions</a>
+      <a href="#" class="nav-item" data-section="messages">Costly Msgs</a>
+      <a href="#" class="nav-item" data-section="models">Models</a>
+      <a href="#" class="nav-item" data-section="projects">Projects</a>
+      <a href="#" class="nav-item" data-section="insights">Insights</a>
     </nav>
-    <div class="sidebar-footer">
-      <div style="display:flex;gap:6px;margin-bottom:10px">
-        <button class="theme-btn" id="theme-toggle" title="Toggle dark/light mode">🌙</button>
-        <button class="theme-btn" id="compact-toggle" title="Toggle compact mode">⊟</button>
+    <div class="header-right">
+      <div class="live-indicator" id="live-indicator">
+        <span class="live-dot" id="live-dot"></span>
+        <span class="live-label" id="live-label">Connecting</span>
       </div>
+      <span class="last-updated" id="last-updated">—</span>
       <button id="refresh-btn" class="refresh-btn">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 7A5 5 0 112 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 4v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M12 7A5 5 0 112 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 4v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Refresh
       </button>
-      <div class="live-indicator" id="live-indicator" title="Real-time updates via file watcher">
-        <span class="live-dot" id="live-dot"></span>
-        <span class="live-label" id="live-label">Connecting…</span>
-      </div>
-      <p class="last-updated" id="last-updated">—</p>
     </div>
-  </aside>
+  </header>
 
-  <!-- Main content -->
+  <!-- ===== Top stats bar ===== -->
+  <div class="top-stats-bar">
+    <div class="top-stat">
+      <div class="top-stat-label">Total Spend</div>
+      <div class="top-stat-value amber" id="total-cost">$0.00</div>
+      <div class="top-stat-sub" id="total-messages-sub">0 messages</div>
+    </div>
+    <div class="top-stat">
+      <div class="top-stat-label">Sessions</div>
+      <div class="top-stat-value" id="total-sessions-count">0</div>
+      <div class="top-stat-sub" id="total-sessions-sub">0 projects</div>
+    </div>
+    <div class="top-stat">
+      <div class="top-stat-label">Total Tokens</div>
+      <div class="top-stat-value" id="total-all-tokens">0</div>
+      <div class="top-stat-sub" id="total-token-breakdown">0 in · 0 out</div>
+    </div>
+    <div class="top-stat">
+      <div class="top-stat-label">Cache Savings</div>
+      <div class="top-stat-value green" id="cache-savings">$0.00</div>
+      <div class="top-stat-sub" id="cache-read-sub">0% hit rate</div>
+    </div>
+  </div>
+
+  <!-- ===== Main content ===== -->
   <main class="main-content">
 
     <!-- ===== OVERVIEW ===== -->
     <section id="overview" class="section">
-      <div class="section-header">
-        <h1>Overview</h1>
-        <p class="section-desc">Your Claude Code token usage at a glance</p>
+
+      <!-- Usage summary line -->
+      <div class="usage-summary-line">
+        Claude Usage
+        <span class="usage-dim">&nbsp;·&nbsp;</span>
+        <span id="usage-date-range">all time</span>
+        <span class="usage-dim">&nbsp;·&nbsp;</span>
+        <span id="usage-total-messages">0</span>&nbsp;turns
+        <span class="usage-dim">&nbsp;·&nbsp;</span>
+        <span id="usage-total-sessions">0</span>&nbsp;sessions
+        <span class="usage-dim">&nbsp;·&nbsp;</span>
+        <span id="usage-total-tokens">0</span>&nbsp;tokens
       </div>
 
-      <!-- How tokens work collapsible -->
+      <!-- How tokens work (collapsible) -->
       <div class="tokens-explainer" id="tokens-explainer">
         <button class="tokens-explainer-header" id="tokens-explainer-toggle">
-          <span class="tokens-explainer-title">HOW CLAUDE CODE TOKENS WORK</span>
-          <svg class="chevron" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="tokens-explainer-title">How Claude Code Tokens Work</span>
+          <svg class="chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <div class="tokens-explainer-body" id="tokens-explainer-body" style="display:none">
           <p class="explainer-intro">Every time you send a message, Claude re-reads your <strong>entire conversation</strong> from the beginning — not just your latest message. That's why tokens compound fast in long sessions.</p>
-
-          <!-- 4 token type cards -->
           <div class="tok-type-grid">
             <div class="tok-type-card" style="--tok-color:#3b82f6">
               <div class="tok-type-dot" style="background:#3b82f6"></div>
@@ -127,8 +137,8 @@
               <div class="tok-type-name">Cache Write</div>
               <div class="tok-type-desc">Claude saves the context so the next message doesn't re-process it. 1.25× input, once only.</div>
             </div>
-            <div class="tok-type-card" style="--tok-color:#f59e0b">
-              <div class="tok-type-dot" style="background:#f59e0b"></div>
+            <div class="tok-type-card" style="--tok-color:#e07000">
+              <div class="tok-type-dot" style="background:#e07000"></div>
               <div class="tok-type-name">Cache Read</div>
               <div class="tok-type-desc">Follow-up messages reuse saved context at 10× cheaper than input. More reads = more savings.</div>
             </div>
@@ -138,8 +148,6 @@
               <div class="tok-type-desc">Claude's response tokens. Most expensive per token — but usually the smallest volume.</div>
             </div>
           </div>
-
-          <!-- Example timeline -->
           <div class="tok-timeline">
             <div class="tok-timeline-title">Example: 3-message conversation</div>
             <div class="tok-timeline-item">
@@ -165,7 +173,6 @@
             </div>
             <div class="tok-timeline-note">Without caching, every message would be full input price. Cache reads save up to 10× on repeated context.</div>
           </div>
-
           <div class="explainer-tip">
             <span>💡</span>
             <span>Use <code>/clear</code> when switching tasks — it resets context so Claude stops re-reading history you no longer need.</span>
@@ -191,79 +198,80 @@
         <span class="date-range-label" id="date-range-label">All time</span>
       </div>
 
-      <!-- Stats cards -->
-      <div class="stats-grid">
-        <div class="stat-card accent">
-          <div class="stat-label">Total Spend</div>
-          <div class="stat-value" id="total-cost">$0.00</div>
-          <div class="stat-sub" id="total-messages-sub">0 messages</div>
+      <!-- Model bars + secondary overview side by side -->
+      <div class="overview-two-col">
+        <!-- Model breakdown bars -->
+        <div class="overview-card">
+          <div class="overview-card-label">By Model</div>
+          <div id="model-bars-overview"></div>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">Total Usage</div>
-          <div class="stat-value" id="total-all-tokens">0</div>
-          <div class="stat-sub" id="total-token-breakdown">0 input · 0 output</div>
-        </div>
-        <div class="stat-card blue">
-          <div class="stat-label">Cache Hit Rate</div>
-          <div class="stat-value" id="cache-hit-rate">0%</div>
-          <div class="stat-sub" id="cache-read-sub">0 tokens from cache</div>
-        </div>
-        <div class="stat-card green">
-          <div class="stat-label">Cache Savings</div>
-          <div class="stat-value" id="cache-savings">$0.00</div>
-          <div class="stat-sub" id="total-sessions-sub">0 sessions · 0 projects</div>
+
+        <!-- Key efficiency metrics -->
+        <div class="overview-card">
+          <div class="overview-card-label">Efficiency</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <div style="font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px">Cache Hit Rate</div>
+              <div style="font-size:1.3rem;font-weight:700;color:var(--teal);line-height:1" id="cache-hit-rate">0%</div>
+              <div style="font-size:0.62rem;color:var(--text-dim);margin-top:2px" id="cache-read-sub2">0 tokens from cache</div>
+            </div>
+            <div>
+              <div style="font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px">Cache Efficiency</div>
+              <div style="font-size:1.3rem;font-weight:700;color:var(--green);line-height:1" id="cache-efficiency-score">0%</div>
+              <div style="font-size:0.62rem;color:var(--text-dim);margin-top:2px">cache reads vs fresh input</div>
+            </div>
+            <div>
+              <div style="font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px">Cost / Message</div>
+              <div style="font-size:1.3rem;font-weight:700;color:var(--text);line-height:1" id="cost-per-msg">$0.00</div>
+              <div style="font-size:0.62rem;color:var(--text-dim);margin-top:2px">avg per API call</div>
+            </div>
+            <div>
+              <div style="font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:4px">30-Day Forecast</div>
+              <div style="font-size:1.3rem;font-weight:700;color:var(--text);line-height:1" id="forecast-30d">$0.00</div>
+              <div style="font-size:0.62rem;color:var(--text-dim);margin-top:2px" id="forecast-sub">based on last 7d avg</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Stats row 2: efficiency metrics -->
-      <div class="stats-grid stats-grid-4">
-        <div class="stat-card">
-          <div class="stat-label">Cost / Message</div>
-          <div class="stat-value" id="cost-per-msg">$0.00</div>
-          <div class="stat-sub">avg per API call</div>
+      <!-- Heatmap: When the Tokens Burn -->
+      <div class="heatmap-section">
+        <div class="heatmap-title">When the Tokens Burn <span>· day-of-week × hour</span></div>
+        <div class="heatmap-grid-wrap">
+          <div id="heatmap-container"></div>
+        </div>
+      </div>
+
+      <!-- Secondary stats -->
+      <div class="secondary-stats-grid">
+        <div class="stat-card" id="billing-window-card">
+          <div class="stat-label">5h Billing Window</div>
+          <div class="stat-value" id="window-cost">$0.00</div>
+          <div class="stat-sub"><span id="window-messages-count">0 msg</span> · resets in <span id="window-countdown" style="color:var(--amber)">—</span></div>
+          <div class="window-bar-wrap">
+            <div class="window-bar-track"><div class="window-bar-fill" id="window-bar-fill" style="width:0%"></div></div>
+          </div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Avg Tokens / Session</div>
           <div class="stat-value" id="avg-tokens-session">0</div>
           <div class="stat-sub">across all sessions</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">30-Day Forecast</div>
-          <div class="stat-value" id="forecast-30d">$0.00</div>
-          <div class="stat-sub" id="forecast-sub">based on last 7d avg</div>
-        </div>
         <div class="stat-card" id="zero-cache-card">
           <div class="stat-label">Zero Cache Sessions</div>
           <div class="stat-value" id="zero-cache-count">0</div>
           <div class="stat-sub">sessions with no cache hits</div>
         </div>
-      </div>
-
-      <!-- Stats row 3: budget + window + cache efficiency -->
-      <div class="stats-grid stats-grid-3">
         <div class="stat-card" id="budget-alert-card">
           <div class="stat-label">Monthly Budget</div>
           <div class="stat-value" id="budget-status">Not set</div>
-          <div class="stat-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <div class="stat-sub" style="margin-top:6px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
             <input type="number" id="budget-input" placeholder="e.g. 100" min="0" step="1"
-              style="width:90px;background:var(--bg3);border:1px solid var(--border-md);border-radius:4px;color:var(--text);font-size:0.78rem;padding:4px 8px;outline:none" />
-            <button onclick="window.applyBudget()" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:0.75rem;font-weight:600;cursor:pointer">Set</button>
-            <button onclick="window.clearBudget()" style="background:none;border:1px solid var(--border-md);color:var(--text-dim);border-radius:4px;padding:4px 8px;font-size:0.72rem;cursor:pointer">Clear</button>
+              style="width:80px;background:var(--bg3);border:1px solid var(--border-md);border-radius:3px;color:var(--text);font-size:0.72rem;padding:3px 6px;outline:none;font-family:inherit" />
+            <button onclick="window.applyBudget()" style="background:var(--amber);color:#000;border:none;border-radius:3px;padding:3px 9px;font-size:0.68rem;font-weight:700;cursor:pointer;font-family:inherit">Set</button>
+            <button onclick="window.clearBudget()" style="background:none;border:1px solid var(--border-md);color:var(--text-dim);border-radius:3px;padding:3px 6px;font-size:0.66rem;cursor:pointer;font-family:inherit">Clear</button>
           </div>
-          <div id="budget-saved-msg" style="display:none;font-size:0.7rem;color:#22c55e;margin-top:4px">✓ Budget saved</div>
-        </div>
-        <div class="stat-card" id="billing-window-card">
-          <div class="stat-label">5h Billing Window</div>
-          <div class="stat-value" id="window-cost">$0.00</div>
-          <div class="stat-sub"><span id="window-messages-count">0 msg</span> · resets in <span id="window-countdown" style="font-family:'JetBrains Mono',monospace;color:var(--accent)">—</span></div>
-          <div class="window-bar-wrap" style="margin-top:6px">
-            <div class="window-bar-track"><div class="window-bar-fill" id="window-bar-fill" style="width:0%"></div></div>
-          </div>
-        </div>
-        <div class="stat-card" id="cache-efficiency-card">
-          <div class="stat-label">Cache Efficiency</div>
-          <div class="stat-value" id="cache-efficiency-score">0%</div>
-          <div class="stat-sub">cache reads vs fresh input</div>
+          <div id="budget-saved-msg" style="display:none;font-size:0.64rem;color:var(--green);margin-top:3px">✓ Budget saved</div>
         </div>
       </div>
 
@@ -272,8 +280,8 @@
         <div class="chart-header">
           <h2>Daily Spend</h2>
           <div class="chart-legend">
-            <span class="legend-dot" style="background:#d97706"></span> Cost
-            <span class="legend-dot" style="background:#3b82f6; margin-left:12px"></span> Output tokens
+            <span class="legend-dot" style="background:#e07000"></span> Cost
+            <span class="legend-dot" style="background:#4488ff;margin-left:10px"></span> Output tokens
           </div>
         </div>
         <div class="chart-wrap"><canvas id="daily-chart"></canvas></div>
@@ -285,7 +293,7 @@
           <h2>Hourly Activity (UTC)</h2>
           <p class="chart-sub">When you use Claude the most</p>
         </div>
-        <div class="chart-wrap" style="height:180px"><canvas id="hourly-chart"></canvas></div>
+        <div class="chart-wrap" style="height:160px"><canvas id="hourly-chart"></canvas></div>
       </div>
 
       <!-- Rate limit events -->
@@ -304,7 +312,7 @@
         <h1>Sessions</h1>
         <p class="section-desc">All conversations ranked by cost — click any row to see every turn</p>
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;justify-content:flex-end">
+      <div style="display:flex;gap:6px;margin-bottom:10px;justify-content:flex-end">
         <button onclick="exportData('csv')" class="export-btn">⬇ Export CSV</button>
         <button onclick="exportData('json')" class="export-btn">⬇ Export JSON</button>
       </div>
@@ -313,14 +321,10 @@
         <span class="session-count-label" id="sessions-count"></span>
       </div>
       <div class="filter-row" id="sessions-filters">
-        <select id="filter-model" class="filter-select">
-          <option value="">All models</option>
-        </select>
-        <select id="filter-client" class="filter-select">
-          <option value="">All clients</option>
-        </select>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:0.75rem;color:var(--text-dim)">Cost:</span>
+        <select id="filter-model" class="filter-select"><option value="">All models</option></select>
+        <select id="filter-client" class="filter-select"><option value="">All clients</option></select>
+        <div style="display:flex;align-items:center;gap:5px">
+          <span style="font-size:0.7rem;color:var(--text-dim)">Cost:</span>
           <input type="number" id="filter-cost-min" class="filter-input" placeholder="Min $" step="0.01" />
           <span style="color:var(--text-dim)">–</span>
           <input type="number" id="filter-cost-max" class="filter-input" placeholder="Max $" step="0.01" />
@@ -331,16 +335,9 @@
         <table class="data-table" id="sessions-table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Duration</th>
-              <th>First Prompt</th>
-              <th>Client</th>
-              <th>Model</th>
-              <th>Prompts</th>
-              <th>Messages</th>
-              <th>Tool Calls</th>
-              <th>Total Tokens</th>
-              <th class="right">Cost</th>
+              <th>Date</th><th>Duration</th><th>First Prompt</th><th>Client</th>
+              <th>Model</th><th>Prompts</th><th>Messages</th><th>Tool Calls</th>
+              <th>Total Tokens</th><th class="right">Cost</th>
             </tr>
           </thead>
           <tbody id="sessions-tbody"></tbody>
@@ -366,33 +363,25 @@
       <div class="two-col">
         <div class="chart-card" style="flex:1">
           <div class="chart-header"><h2>Spend by Model</h2></div>
-          <div class="chart-wrap" style="height:300px"><canvas id="model-pie-chart"></canvas></div>
+          <div class="chart-wrap" style="height:280px"><canvas id="model-pie-chart"></canvas></div>
         </div>
-        <div class="chart-card" style="flex:1.5">
+        <div class="chart-card" style="flex:1.6">
           <div class="chart-header"><h2>Model Stats</h2></div>
           <table class="data-table">
             <thead>
               <tr>
-                <th>Model</th>
-                <th>Sessions</th>
-                <th>Prompts</th>
-                <th>Messages</th>
-                <th>Tool Calls</th>
-                <th>Total Tokens</th>
-                <th class="right">Cost</th>
-                <th class="right">%</th>
+                <th>Model</th><th>Sessions</th><th>Prompts</th><th>Messages</th>
+                <th>Tool Calls</th><th>Total Tokens</th><th class="right">Cost</th><th class="right">%</th>
               </tr>
             </thead>
             <tbody id="model-tbody"></tbody>
           </table>
         </div>
       </div>
-
-      <!-- Model queries -->
-      <div style="margin-top:28px">
-        <h2 style="font-size:1rem;font-weight:600;margin-bottom:16px;color:var(--text)">Queries by Model</h2>
+      <div style="margin-top:24px">
+        <h2 style="font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.11em;color:var(--text-dim);margin-bottom:14px">Queries by Model</h2>
         <div id="model-queries-tabs" class="tab-row"></div>
-        <div id="model-queries-content" class="messages-list" style="margin-top:16px"></div>
+        <div id="model-queries-content" class="messages-list" style="margin-top:14px"></div>
       </div>
     </section>
 
@@ -406,13 +395,8 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th>Project</th>
-              <th>Sessions</th>
-              <th>Messages</th>
-              <th>Tool Calls</th>
-              <th>Total Tokens</th>
-              <th class="right">Cost</th>
-              <th class="right">% of Total</th>
+              <th>Project</th><th>Sessions</th><th>Messages</th><th>Tool Calls</th>
+              <th>Total Tokens</th><th class="right">Cost</th><th class="right">% of Total</th>
             </tr>
           </thead>
           <tbody id="projects-tbody"></tbody>
