@@ -10,15 +10,25 @@
     "start": "node bin/cli.js",
     "dev": "node bin/cli.js"
   },
-  "keywords": ["claude", "token", "usage", "analytics", "ai", "cost"],
+  "keywords": [
+    "claude",
+    "token",
+    "usage",
+    "analytics",
+    "ai",
+    "cost"
+  ],
   "license": "MIT",
   "dependencies": {
-    "express": "^4.19.2",
-    "open": "^10.1.0",
     "chalk": "^5.3.0",
-    "glob": "^11.0.0"
+    "express": "^4.19.2",
+    "glob": "^11.0.0",
+    "open": "^10.1.0"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "puppeteer": "^25.1.0"
   }
 }
