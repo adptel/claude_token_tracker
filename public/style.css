@@ -12,9 +12,9 @@
   --border-md: rgba(255,255,255,0.11);
   --border-hi: rgba(255,255,255,0.20);
 
-  --text:      #c8c8c8;
-  --text-muted:#686868;
-  --text-dim:  #3c3c3c;
+  --text:      #e2e2e2;
+  --text-muted:#999999;
+  --text-dim:  #606060;
 
   --amber:        #e07000;
   --amber-dim:    #994d00;
